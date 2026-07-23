@@ -8,8 +8,8 @@
 
 The [AI Code Review Census](https://github.com/AnishBplayz/ai-reviewer-census)
 already proved the core of this engine works at scale: bot identification,
-comment ingestion, and the git-based action proxy ran cleanly across 716 repos
-and 15,000+ PRs. DiffHawk **promotes that scanner from a study script into a
+comment ingestion, and the git-based action proxy ran cleanly across 813 repos
+and 22,000+ PRs. DiffHawk **promotes that scanner from a study script into a
 product engine** rather than starting from scratch.
 
 ```mermaid
@@ -23,8 +23,8 @@ flowchart TD
     subgraph engine["packages/core — the engine (pure, no I/O)"]
         ING["ingest<br/>bot registry · comment fetch"]
         OUT["outcomes<br/>action proxy · resolve · dismiss"]
-        SCORE["score<br/>per-path · per-category effectiveness"]
-        POL["policy<br/>derive .diffhawk/policy.yml"]
+        SCORE["score<br/>per-severity · per-area effectiveness"]
+        FLAG["flag<br/>trend · degradation · percentile"]
     end
 
     subgraph ports["Ports (injected)"]
@@ -66,10 +66,10 @@ flowchart LR
     A["1 · DISCOVER<br/>which reviewers<br/>comment here"]
     B["2 · INGEST<br/>every comment +<br/>review thread"]
     C["3 · OUTCOME<br/><b>no LLM</b><br/>did the code change?"]
-    D["4 · ATTRIBUTE<br/>by path · category<br/>· severity"]
+    D["4 · ATTRIBUTE<br/>by severity · area"]
     E["5 · SCORE<br/>effectiveness +<br/>cost per acted-on"]
-    F["6 · POLICY<br/>derive suppress /<br/>keep rules"]
-    G["7 · RENDER<br/>scorecard +<br/>policy PR"]
+    F["6 · FLAG<br/>trend + degradation<br/>+ recommendation"]
+    G["7 · RENDER<br/>scorecard"]
 
     A --> B --> C --> D --> E --> F --> G
 ```
@@ -109,36 +109,48 @@ the whole product, and its limitations are documented, not hidden (see below).
 ### 4 · ATTRIBUTE
 
 Bucket every outcome by:
-- **path glob** — `src/services/**`, `**/*.generated.*`, `migrations/**`, …
-- **comment category** — inferred cheaply from the reviewer's own labelling where
-  present, or a small classifier where not (the one optional LLM touchpoint, and
-  it never gates the core signal).
-- **severity** — as declared by the reviewer.
+- **severity** — as declared by the reviewer. The census shows this is where the
+  signal actually separates: high-severity comments are acted on far more than
+  low/nitpick ones.
+- **area** — a coarse top-level path grouping (`src/api`, `src/ui`, …) for
+  drill-down, *not* as a suppression axis.
+
+> **A path-based suppression axis was cut here, on evidence.** An earlier design
+> bucketed by fine path glob to auto-mute generated/migration/lockfile noise. The
+> census showed those paths are 0.8% of all AI comments — reviewers already skip
+> them — and the ignored comments are spread across ordinary source, separable by
+> severity, not path. ATTRIBUTE keeps area for reporting; it does not pretend path
+> predicts noise.
 
 ### 5 · SCORE
 
 ```
 effectiveness(bucket) = acted_on / total
-noise(bucket)         = 1 - effectiveness
 cost_per_acted_on     = bucket_cost / acted_on     (where cost is known)
+percentile(repo)      = where this repo sits vs the census distribution for this reviewer
 ```
 
-Ranked so the biggest noise sources surface first. Trends tracked over time so a
-reviewer that degrades after a model change is visible.
+The headline is not the repo's raw rate but **where it sits against the census
+distribution** — "44% globally, 18% here, bottom 15%" is the sentence that lands.
+Trends are tracked over time so a reviewer that degrades after a model change is
+visible.
 
-### 6 · POLICY
+### 6 · FLAG
 
-Turn the scorecard into `.diffhawk/policy.yml`: paths to suppress (high volume,
-near-zero action), paths to keep, and a confidence note per rule. Conservative by
-default — it proposes, a human merges. **DiffHawk never silently changes what your
-reviewer does.**
+Compare against history and the census baseline, and raise a flag when:
+- effectiveness **dropped** materially versus the trailing window (degradation),
+- the repo sits in the **bottom decile** for its reviewer (not earning its place).
+
+A flag is a recommendation with a number behind it — tune the reviewer's config,
+or drop it — never an automatic change. **DiffHawk never silently changes what
+your reviewer does.** Whether a narrow, evidence-gated automatic policy is ever
+safe (e.g. muting one reviewer's `low`-severity comments in an area proven near-
+zero) is an open question, deferred until the scorecard can justify it.
 
 ### 7 · RENDER
 
-A scorecard (comment or dashboard) and, optionally, a pull request that adds the
-suppression rules to the reviewer's own config or to a `.diffhawk/policy.yml` a
-lightweight Action enforces. Deterministic code does the writing; no model output
-becomes an action (see Threat Model).
+A scorecard (terminal, PR comment, or dashboard) plus any flags. Deterministic
+code does the writing; no model output becomes an action (see Threat Model).
 
 ---
 
@@ -172,12 +184,19 @@ export const Scorecard = z.object({
   reviewer: z.string(),
   window: z.object({ from: z.string(), to: z.string() }),
   totals: z.object({ comments: z.number(), actedOn: z.number(), effectiveness: z.number() }),
-  byPath: z.array(z.object({
-    glob: z.string(), comments: z.number(), actedOn: z.number(),
-    effectiveness: z.number(), recommendation: z.enum(['keep','suppress','watch']),
+  // Where this repo sits against the census distribution for this reviewer —
+  // the headline sentence ("18% here vs 44% globally, bottom 15%").
+  percentile: z.number().nullable(),
+  bySeverity: z.array(z.object({
+    severity: z.string(), comments: z.number(), actedOn: z.number(), effectiveness: z.number(),
   })),
-  byCategory: z.array(z.object({ category: z.string(), comments: z.number(), effectiveness: z.number() })),
+  byArea: z.array(z.object({
+    area: z.string(), comments: z.number(), actedOn: z.number(), effectiveness: z.number(),
+  })),
   cost: z.object({ usd: z.number().nullable(), perActedOn: z.number().nullable() }),
+  flags: z.array(z.object({
+    kind: z.enum(['degraded','bottom_decile']), detail: z.string(),
+  })),
   // First-class, never a logging afterthought — the honesty surface.
   caveats: z.array(z.string()),
 });
@@ -254,16 +273,15 @@ don't orphan a backfill.
 ### Data model
 
 ```
-repos ─┬─ reviewers ─┬─ comments ──┬─ outcomes        (one row, one git-verifiable fact)
-       │             │             └─ categories
-       │             └─ scorecards ── scorecard_paths  (per-glob effectiveness snapshot)
-       ├─ policy_versions   (every generated policy, diffable over time)
+repos ─┬─ reviewers ─┬─ comments ──┬─ outcomes         (one row, one git-verifiable fact)
+       │             │             └─ severity/area
+       │             └─ scorecards ── scorecard_buckets (per-severity/area snapshot, over time)
        └─ api_calls         (GitHub call ledger: endpoint, cost-in-points, latency, retries)
 ```
 
 `api_calls` turns "backfill is expensive" into an exact number and drives the
-shared rate limiter. `policy_versions` makes "what did we suppress, and did
-effectiveness recover after?" a query, not a guess.
+shared rate limiter. The scorecard time series makes "did this reviewer degrade
+after their model change?" a query, not a guess.
 
 ---
 
@@ -304,20 +322,21 @@ strongest signals a portfolio project carries.
 | Orchestration | K8s + Kustomize overlays, KEDA on queue depth | Named job-gap tech; KEDA is the honest answer to "how does the worker scale." |
 | CI | lint · typecheck · unit · integration · injection canaries · **scoring-regression gate** | The regression gate is the unusual, senior one. |
 
-### `.diffhawk/policy.yml`
+### `.diffhawk.yml`
 
 ```yaml
 version: 1
-reviewers: [coderabbitai]        # which reviewer this policy governs
-suppress:                         # derived from the scorecard, human-merged
-  - path: "**/*.generated.ts"     # 47 comments / 90d, 2% acted on
-  - path: "migrations/**"         # 23 comments / 90d, 0% acted on
-  - path: "pnpm-lock.yaml"
-keep:
-  - path: "src/services/**"       # 54% acted on — do not touch
+reviewers: [auto]                 # or pin: [coderabbitai, copilot]
+window_days: 90
 report:
   cadence: weekly
-  post_scorecard: true
+  post_scorecard: true            # comment the scorecard on a scheduled PR/issue
+flags:
+  degradation_drop: 15            # flag if effectiveness falls >15 pts vs trailing window
+  bottom_decile: true             # flag if repo sits in the reviewer's bottom 10% (census)
+ignore:                           # paths excluded from measurement noise, not "suppressed"
+  - "**/*.generated.*"
+  - "pnpm-lock.yaml"
 ```
 
 ---
@@ -330,14 +349,13 @@ diffhawk/
 │   ├── api/                  NestJS — webhooks, backfill trigger, scorecard, health
 │   ├── worker/               BullMQ stage processors (backfill, ingest, outcome, score)
 │   ├── cli/                  npx diffhawk score — the funnel
-│   └── web/                  Dashboard (later): scorecards, trends, policy diffs
+│   └── web/                  Dashboard (later): scorecards, trends, degradation flags
 ├── packages/
-│   ├── core/                 THE ENGINE. Pure. ingest · outcomes · score · policy
+│   ├── core/                 THE ENGINE. Pure. outcomes · attribute · score · flag
 │   ├── ingest/               bot registry + comment fetch (promoted from the census)
 │   ├── github/               VcsProvider adapter + webhook verification
 │   ├── db/                   Drizzle schema, migrations, ReviewStore
-│   ├── policy/               .diffhawk/policy.yml parse, derive, enforce
-│   ├── config/               config parse + defaults + merge
+│   ├── config/               .diffhawk.yml parse + defaults + merge
 │   ├── llm-anthropic/        optional LlmProvider (categoriser + own-reviewer)
 │   └── eval/                 scoring-regression harness (shared lineage with the census)
 ├── action/                   GitHub Action wrapper (bundled)

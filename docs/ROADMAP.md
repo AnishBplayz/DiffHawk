@@ -14,20 +14,21 @@ Durations assume evenings-and-weekends, not full-time.
 
 Promote the census scanner into a product engine. The bot registry, GraphQL
 ingest, and the `isOutdated` action proxy already exist and are tested — this
-phase re-homes them behind clean ports and adds per-path attribution.
+phase re-homes them behind clean ports and adds effectiveness scoring.
 
-- [ ] pnpm workspace, TS strict, Vitest, lint; `packages/core` + `packages/ingest`
+- [ ] npm workspace, TS strict, Vitest, lint; `packages/core` + `packages/ingest`
 - [ ] Port the census registry + ingest; add `VcsProvider` / `ReviewStore` ports
 - [ ] OUTCOME stage: acted-on / resolved / dismissed / ignored, each with evidence
-- [ ] ATTRIBUTE stage: bucket outcomes by path glob and severity
-- [ ] SCORE stage: per-path effectiveness, noise ranking
+- [ ] ATTRIBUTE stage: bucket outcomes by severity and coarse area
+- [ ] SCORE stage: per-repo effectiveness, per-severity/area breakdown
 - [ ] `apps/cli`: `diffhawk score owner/repo` → scorecard in the terminal
 - [ ] Zod schemas: `ReviewComment`, `Outcome`, `Scorecard` (with `caveats`)
 
 **Exit gate:** run it on 10 real repos that run a reviewer (yours + OSS from the
-census corpus — the targets are already known). It produces a per-path scorecard
-that surfaces at least one path where the reviewer is obvious noise. Screenshot it;
-that image is the launch asset.
+census corpus — the targets are already known). It produces a per-repo scorecard
+that correctly separates a sharp reviewer from a near-noise one (the census says
+~1 in 5 will be the latter). Screenshot the starkest one; that image is the launch
+asset.
 
 ---
 
@@ -51,20 +52,26 @@ the phase that earns the word "measured."
 
 ---
 
-## Phase 2 — GitHub Action + Policy · "it changes behaviour" · ~4–5 days
+## Phase 2 — GitHub Action + Flags · "it watches over time" · ~4–5 days
 
-Ship the low-friction surface and the piece with teeth.
+Ship the low-friction surface and the trend/degradation signal.
 
 - [ ] `action/` — bundled; posts a scorecard comment on a schedule via `GITHUB_TOKEN`
-- [ ] `packages/policy`: derive `.diffhawk/policy.yml` from a scorecard (propose,
-      never auto-apply)
-- [ ] Optional enforcement: a tiny Action that applies suppression to the
-      reviewer's own config, or filters via `.diffhawk/policy.yml`
+- [ ] `.diffhawk.yml` parse + defaults; `packages/config`
+- [ ] Trend + degradation: compare each window against the trailing one and flag
+      material drops; flag bottom-decile-vs-census
 - [ ] Idempotent scorecard comments via a hidden marker (no duplicate walls)
 - [ ] **Dogfood: DiffHawk scores DiffHawk's reviewer, publicly, on every PR**
 
+> **Not in this phase, on purpose:** automatic path-based suppression. The census
+> showed noise is not path-separable (generated/lock/migration paths are 0.8% of
+> comments and reviewers already skip them), and an un-acted-on comment isn't
+> proven wrong — so auto-muting would hide real findings. DiffHawk reports and
+> flags; a human decides. A narrow, evidence-gated auto-policy stays a research
+> item until the scorecard can justify one.
+
 **Exit gate:** a ≤10-line workflow gives a working scorecard on a fresh repo, and
-a generated policy PR measurably drops noise on the next scorecard.
+a simulated effectiveness drop across two windows raises a degradation flag.
 
 ---
 
@@ -111,8 +118,8 @@ README, with the numbers.
 
 ## Phase 5 — Dashboard + trends · ~5–6 days
 
-- [ ] `apps/web` — scorecards, per-path drilldown, effectiveness **trend over time**,
-      policy version diffs, DLQ + replay
+- [ ] `apps/web` — scorecards, per-severity/area drilldown, effectiveness **trend
+      over time**, degradation flags, DLQ + replay
 - [ ] Trend alerting: flag when a reviewer's effectiveness drops after a model
       change (a genuinely useful, genuinely novel signal)
 - [ ] **CI scoring-regression gate:** a change that alters scores on the fixture
@@ -187,7 +194,7 @@ and is the warm-up act — it seeds the audience months ahead.
 |---|---|---|
 | Day 1, Tue–Thu ~08:00 ET | **Show HN** | *"Show HN: DiffHawk — find out if the AI code reviewer you already pay for is actually working"* — lead with the ignored-comment number from the Census. |
 | Day 1 | Lobste.rs, r/programming, r/devops, r/selfhosted | Self-hosting + neutrality angle. |
-| Day 2 | dev.to / Hashnode | *"I measured 716 repos to find out if AI code review works. Then I built the tool that measures yours."* — the Census → product arc is the story. |
+| Day 2 | dev.to / Hashnode | *"I measured 813 repos to find out if AI code review works. Then I built the tool that measures yours."* — the Census → product arc is the story. |
 | Day 3–7 | X/Bluesky | The per-path scorecard screenshot is the hook. |
 | Week 2 | awesome-* PRs, dev-tool Discords | Long tail. |
 
@@ -209,7 +216,7 @@ From Phase 4, all true and each a ten-minute interview thread:
   by a chaos test that kills workers mid-backfill.
 - Designed rate-limit-aware backoff with a Redis-shared token bucket across worker
   replicas.
-- Shipped the measurement thesis as a public 716-repo study *before* building the
+- Shipped the measurement thesis as a public 813-repo study *before* building the
   product, and let the data kill a feature (bot consolidation) before it was built.
 - Wrote the threat model for a system whose every input is attacker-controlled.
 - Gated scoring changes in CI on a fixture-corpus regression check.

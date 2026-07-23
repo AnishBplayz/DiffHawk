@@ -8,7 +8,7 @@ a decision log that stops matching the code is worse than none.
 ## ADR-001 · Measure the market before building the product
 
 **Decision.** Build the [AI Code Review
-Census](https://github.com/AnishBplayz/ai-reviewer-census) first — a 716-repo
+Census](https://github.com/AnishBplayz/ai-reviewer-census) first — a 813-repo
 study of AI reviewer behaviour — and let its results set the product direction.
 
 **Why.** The original idea (build another reviewer) and the first pivot (build a
@@ -28,7 +28,7 @@ signal.
 ## ADR-002 · Target the single-reviewer majority, not the multi-reviewer edge
 
 **Decision.** Build for the ~38% of repos running exactly one AI reviewer, whose
-comments are ignored more than half the time (45% acted-on vs 61% for humans).
+comments are ignored more than half the time (44% acted-on vs 60% for humans).
 
 **Alternatives.** Consolidate multiple bots (the killed pivot); build a better
 reviewer (commodity, incumbents win on distribution).
@@ -38,7 +38,7 @@ unmet, unmeasured need. The consolidator served a population 3× smaller with a
 problem that barely exists.
 
 **Reverse if.** Multi-reviewer adoption crosses ~25% and duplication ~25% in the
-census, which is tracked continuously. Both have been flat across n=120→716.
+census, which is tracked continuously. Both have been flat across n=120→813.
 
 ---
 
@@ -50,7 +50,7 @@ optional categorisation, which never gates a number.
 
 **Why.** A measurement product must be trustworthy and cheap to recompute. A
 git-derived signal cannot be gamed by comment wording, costs no tokens, and is
-replayable offline. The census validated it across 15,000+ PRs.
+replayable offline. The census validated it across 22,000+ PRs.
 
 **Cost accepted.** `isOutdated` is a proxy with known biases (force-push, squash,
 unrelated same-region edits). These are documented in every scorecard's `caveats`
@@ -115,18 +115,37 @@ suffices — then keep the queue for the fleet case and document the threshold.
 
 ---
 
-## ADR-008 · Suppress, don't replace; propose, don't auto-apply
+## ADR-008 · Report and flag; do not auto-suppress (revised on evidence)
 
-**Decision.** DiffHawk keeps your existing reviewer and, at most, generates a
-policy that mutes it where it's historically noise. Policies are proposed as PRs a
-human merges, never applied silently.
+**Decision.** DiffHawk measures the reviewer you run, reports a per-repo scorecard,
+and flags degradation or bottom-decile performance. It does **not** automatically
+mute comments.
 
-**Why.** The value is keeping a muted tool *alive* by scoping it to where it's
-good — not swapping it for DiffHawk. Silent changes to what a reviewer does would
-destroy trust faster than noise does.
+**What changed.** An earlier version of this ADR had DiffHawk generate a
+`.diffhawk/policy.yml` that suppressed the reviewer on paths where it was
+historically noise. Before building it, a census sub-analysis tested the premise
+and it failed on two counts:
+1. **Noise is not path-separable.** Generated/lockfile/migration paths are 0.8% of
+   all AI comments — reviewers already skip them. Ignored comments are spread
+   across ordinary source.
+2. **Un-acted-on ≠ wrong.** A correct nitpick a team declines to fix is
+   indistinguishable from noise by the action proxy, so auto-muting on that signal
+   would suppress real findings.
 
-**Reverse if.** Users overwhelmingly ask for auto-apply on high-confidence rules —
-then gate it behind explicit per-repo opt-in, still logged and reversible.
+**Why the new shape.** The measurable, defensible value is *visibility*: the
+census shows per-repo effectiveness ranges 13%–69%, and ~19% of repos run a
+reviewer at ≤25% without knowing it. Surfacing that number, its trend, and its
+percentile is real and honest. Acting on it is the human's call.
+
+**Reverse if.** The scorecard produces a narrow, high-confidence, evidence-gated
+rule (e.g. one reviewer's `low`-severity comments in an area proven near-zero over
+a long window) — then offer it behind explicit per-repo opt-in, logged and
+reversible. Not before the data earns it.
+
+**Note.** This is the third idea the census killed or reshaped before code
+(after "another reviewer" and "the consolidator"). That the measurement layer
+keeps overruling the product intuition is the strongest evidence the measurement
+layer is worth having — and the story worth telling.
 
 ---
 
@@ -142,12 +161,12 @@ the one the census needed.
 
 ## ADR-010 · No whole-repo semantic index in v1
 
-**Decision.** Attribution uses path globs, tree-sitter symbols, and the diff — no
+**Decision.** Attribution uses severity, coarse path areas, and the diff — no
 embedding index or vector store.
 
 **Why.** A repo-wide index is a large subsystem where funded competitors have a
-structural edge a solo build won't match. Scoring effectiveness by path needs none
-of it. The README states the limitation plainly.
+structural edge a solo build won't match. Scoring effectiveness by severity and
+area needs none of it. The README states the limitation plainly.
 
 **Reverse if.** A high-value signal proves unreachable without cross-file context
 — then add targeted call-graph lookup, not a general index.
