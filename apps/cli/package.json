@@ -1,0 +1,11 @@
+{
+  "name": "@diffhawk/cli",
+  "version": "0.0.0",
+  "type": "module",
+  "bin": { "diffhawk": "./src/main.ts" },
+  "dependencies": {
+    "@diffhawk/core": "workspace:*",
+    "@diffhawk/ingest": "workspace:*",
+    "@diffhawk/github": "workspace:*"
+  }
+}

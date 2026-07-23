@@ -1,0 +1,25 @@
+{
+  "name": "diffhawk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Measure whether the AI code reviewer you already run is actually working on your repo.",
+  "license": "Apache-2.0",
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "score": "bun run apps/cli/src/main.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "@types/picomatch": "^4.0.3",
+    "typescript": "^5.7.0"
+  }
+}

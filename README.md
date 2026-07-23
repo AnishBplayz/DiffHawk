@@ -88,6 +88,39 @@ know."
 Full study, method, limitations, and raw data:
 **[AI Code Review Census](https://github.com/AnishBplayz/ai-reviewer-census)**.
 
+## Try it (Phase 0 — the scoring engine + CLI)
+
+Requires [Bun](https://bun.sh). Read-only; it only reads public pull requests and
+uses `GITHUB_TOKEN` or falls back to `gh auth token`.
+
+```bash
+bun install
+bun run score maximhq/bifrost        # a reviewer that's earning its place (~68%)
+bun run score <owner>/<repo>          # your repo
+```
+
+Sample output:
+
+```
+  CodeRabbit on maximhq/bifrost  · 2026-04-24 → 2026-07-23
+
+  68% of 130 comments led to a code change  (89 acted-on)
+  census global for CodeRabbit: 37%  — this repo is above average  ·  sharp — earning its place
+
+  by severity
+    high         ████████████████   97%  65/67
+    unknown      ██████░░░░░░░░░░   35%  19/54
+  ...
+```
+
+The census makes the comparison possible: `bun run score` knows the global
+per-reviewer baseline, so it can tell you not just *your* number but whether it's
+good. Run it on a few repos and you'll see the same 25%–70% spread the census
+found — that variance, per repo, is the whole point.
+
+`bun test` runs the pure-engine suite (outcome classification, severity
+inference, and the full scoring pipeline against fixtures — no network).
+
 ## Where competitors are ahead
 
 Honest, because it's the fast way to earn trust:
