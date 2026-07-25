@@ -1,5 +1,5 @@
-import type { Bucket, ReviewComment, Scorecard, Severity } from '../schemas.ts';
-import { classifyOutcome, isActedOn } from './outcome.ts';
+import type { Bucket, Outcome, ReviewComment, Scorecard, Severity } from '../schemas.ts';
+import { classifyOutcome, isActedOn, isDecided } from './outcome.ts';
 import { areaOf } from './attribute.ts';
 
 export interface ScoreInput {
@@ -9,39 +9,43 @@ export interface ScoreInput {
   comments: ReviewComment[];
   /** Global effectiveness for this reviewer, from the census, if known. */
   baselineEffectiveness?: number;
-  /** Whether any PR in the sample was still open (drives a caveat). */
-  hadOpenPulls: boolean;
 }
 
 const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'unknown'];
 
-function bucketize(
-  comments: ReviewComment[],
-  keyOf: (c: ReviewComment) => string,
-): Map<string, { comments: number; actedOn: number }> {
-  const out = new Map<string, { comments: number; actedOn: number }>();
-  for (const c of comments) {
-    const key = keyOf(c);
-    const b = out.get(key) ?? { comments: 0, actedOn: 0 };
-    b.comments++;
-    if (isActedOn(classifyOutcome(c))) b.actedOn++;
-    out.set(key, b);
-  }
-  return out;
+/** A comment paired with its computed outcome, so we classify exactly once. */
+interface Scored {
+  comment: ReviewComment;
+  outcome: Outcome;
 }
 
-const toBucket = (key: string, v: { comments: number; actedOn: number }): Bucket => ({
-  key,
-  comments: v.comments,
-  actedOn: v.actedOn,
-  effectiveness: v.comments === 0 ? 0 : v.actedOn / v.comments,
-});
+/**
+ * Bucket decided comments by a key. Pending comments are excluded entirely — a
+ * bucket's rate must be actedOn / decided, never diluted by undecided ones.
+ */
+function bucketize(scored: Scored[], keyOf: (c: ReviewComment) => string): Bucket[] {
+  const acc = new Map<string, { comments: number; actedOn: number }>();
+  for (const { comment, outcome } of scored) {
+    if (!isDecided(outcome)) continue;
+    const key = keyOf(comment);
+    const b = acc.get(key) ?? { comments: 0, actedOn: 0 };
+    b.comments++;
+    if (isActedOn(outcome)) b.actedOn++;
+    acc.set(key, b);
+  }
+  return [...acc].map(([key, v]) => ({
+    key,
+    comments: v.comments,
+    actedOn: v.actedOn,
+    effectiveness: v.comments === 0 ? 0 : v.actedOn / v.comments,
+  }));
+}
 
 /**
  * Verdict bands come straight from the census per-repo distribution
- * (p10=13%, median=44%, p90=69%): below p10 is effectively noise, below median
- * is weak, above p90 is sharp. Absolute bands, not relative — a reviewer at 6%
- * is noise regardless of what its global average happens to be.
+ * (p10≈14%, median≈43%, p90≈70%): below ~p10 is effectively noise, below median
+ * is weak, near p90 is sharp. Absolute bands, not relative — a reviewer at 6% is
+ * noise regardless of what its global average happens to be.
  */
 function verdictFor(eff: number): 'sharp' | 'typical' | 'weak' | 'noise' {
   if (eff < 0.15) return 'noise';
@@ -55,17 +59,20 @@ function verdictFor(eff: number): 'sharp' | 'typical' | 'weak' | 'noise' {
  * raw rate but where it sits versus the census baseline for this reviewer.
  */
 export function score(input: ScoreInput): Scorecard {
-  const { comments } = input;
-  const actedOn = comments.filter((c) => isActedOn(classifyOutcome(c))).length;
-  const effectiveness = comments.length === 0 ? 0 : actedOn / comments.length;
+  const scored: Scored[] = input.comments.map((comment) => ({
+    comment,
+    outcome: classifyOutcome(comment),
+  }));
 
-  const bySeverity: Bucket[] = [...bucketize(comments, (c) => c.severity)]
-    .map(([k, v]) => toBucket(k, v))
-    .sort((a, b) => SEVERITY_ORDER.indexOf(a.key as Severity) - SEVERITY_ORDER.indexOf(b.key as Severity));
+  const decidedItems = scored.filter((s) => isDecided(s.outcome));
+  const pending = scored.length - decidedItems.length;
+  const actedOn = decidedItems.filter((s) => isActedOn(s.outcome)).length;
+  const effectiveness = decidedItems.length === 0 ? 0 : actedOn / decidedItems.length;
 
-  const byArea: Bucket[] = [...bucketize(comments, (c) => areaOf(c.path))]
-    .map(([k, v]) => toBucket(k, v))
-    .sort((a, b) => b.comments - a.comments);
+  const bySeverity = bucketize(scored, (c) => c.severity).sort(
+    (a, b) => SEVERITY_ORDER.indexOf(a.key as Severity) - SEVERITY_ORDER.indexOf(b.key as Severity),
+  );
+  const byArea = bucketize(scored, (c) => areaOf(c.path)).sort((a, b) => b.comments - a.comments);
 
   const base = input.baselineEffectiveness;
   const baseline: Scorecard['baseline'] =
@@ -73,14 +80,13 @@ export function score(input: ScoreInput): Scorecard {
       ? null
       : {
           globalEffectiveness: base,
-          // Coarse percentile via the global distribution; null keeps us honest
-          // about it being an approximation, not a true per-reviewer rank.
+          // Coarse: null keeps us honest that this is not a true per-reviewer rank.
           percentile: null,
           verdict: verdictFor(effectiveness),
         };
 
   const flags: Scorecard['flags'] = [];
-  if (base !== undefined && comments.length >= 20 && effectiveness < base * 0.6) {
+  if (base !== undefined && decidedItems.length >= 20 && effectiveness < base * 0.6) {
     flags.push({
       kind: 'bottom_decile',
       detail: `${(effectiveness * 100).toFixed(0)}% acted-on vs ${(base * 100).toFixed(0)}% global for ${input.reviewer} — well below par.`,
@@ -96,37 +102,63 @@ export function score(input: ScoreInput): Scorecard {
     });
   }
 
-  const caveats = buildCaveats(input, comments.length);
-
   return {
     repo: input.repo,
     reviewer: input.reviewer,
     window: input.window,
-    totals: { comments: comments.length, actedOn, effectiveness },
+    totals: {
+      comments: scored.length,
+      decided: decidedItems.length,
+      pending,
+      actedOn,
+      effectiveness,
+    },
     baseline,
     bySeverity,
     byArea,
     flags,
-    caveats,
+    caveats: buildCaveats(scored, pending),
   };
 }
 
 /**
  * The honesty surface. These travel with every scorecard so no number is read
- * without the biases behind it. The action proxy is a proxy, and saying so is
- * the difference between a measurement tool and a confident guess.
+ * without the biases behind it. Each caveat is only emitted when it actually
+ * applies to this scorecard — a static disclaimer nobody reads is worse than a
+ * specific one that names the effect and its direction.
  */
-function buildCaveats(input: ScoreInput, n: number): string[] {
+function buildCaveats(scored: Scored[], pending: number): string[] {
   const caveats: string[] = [
-    "\"Acted-on\" means the anchored code changed after the comment (GitHub's isOutdated). It is a proxy: an unrelated edit to the same lines also counts, and a correct comment a team declines to fix does not.",
+    "\"Acted-on\" = the anchored code changed after the comment (GitHub's isOutdated). It is a proxy for influence, not proof: a rebase or an unrelated edit to the same lines also marks a thread outdated (inflates), and a fix made elsewhere in the file does not (deflates).",
   ];
-  if (input.hadOpenPulls) {
+
+  if (pending > 0) {
     caveats.push(
-      'Some pulls are still open; their comments have no decided outcome yet and are counted as not-yet-acted-on, which understates a very recent window.',
+      `${pending} comment(s) on still-open PRs are excluded from the rate as undecided, not counted as failures.`,
     );
   }
-  if (n < 30) {
-    caveats.push(`Only ${n} comments in this window — too few for a stable rate. Treat as directional.`);
+
+  const decided = scored.filter((s) => isDecided(s.outcome));
+  const abandoned = decided.filter((s) => s.outcome.evidence === 'pr_abandoned').length;
+  if (decided.length > 0 && abandoned / decided.length > 0.25) {
+    caveats.push(
+      `${abandoned} of ${decided.length} scored comments are on PRs closed without merging; their code never shipped, so "acted-on" here means the author responded, not that the change landed.`,
+    );
   }
+
+  const actedFromUnmerged = decided.filter(
+    (s) => isActedOn(s.outcome) && s.comment.prState === 'closed_unmerged',
+  ).length;
+  const actedTotal = decided.filter((s) => isActedOn(s.outcome)).length;
+  if (actedTotal > 0 && actedFromUnmerged / actedTotal > 0.2) {
+    caveats.push(
+      `${actedFromUnmerged} of ${actedTotal} acted-on comments come from PRs that never merged — the influence is real but the code is not in main.`,
+    );
+  }
+
+  if (decided.length < 30) {
+    caveats.push(`Only ${decided.length} decided comments — too few for a stable rate. Treat as directional.`);
+  }
+
   return caveats;
 }

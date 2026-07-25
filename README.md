@@ -13,8 +13,8 @@ then quietly turns off the parts that aren't.**
 Your team turned on an AI code reviewer months ago. It leaves comments on every
 PR. Nobody knows if it's helping.
 
-I measured this properly before building anything. Across **813 public
-repositories and 22,000+ pull requests** ([AI Code Review
+I measured this properly before building anything. Across **1,112 public
+repositories and 28,000+ pull requests** ([AI Code Review
 Census](https://github.com/AnishBplayz/ai-reviewer-census)):
 
 - **~38%** of active repos run an AI reviewer.
@@ -77,8 +77,8 @@ know."
 
 | | |
 |---|---|
-| Repositories studied | 813 (and growing) |
-| Pull requests | 22,000+ |
+| Repositories studied | 1,112 (and growing) |
+| Pull requests | 28,000+ |
 | Run any AI reviewer | ~38% |
 | Run 2+ | ~12% |
 | AI comments that changed code (average) | 44% |
@@ -119,7 +119,15 @@ good. Run it on a few repos and you'll see the same 25%–70% spread the census
 found — that variance, per repo, is the whole point.
 
 `bun test` runs the pure-engine suite (outcome classification, severity
-inference, and the full scoring pipeline against fixtures — no network).
+inference, diff parsing, and the full scoring pipeline against fixtures — no
+network).
+
+**How far to trust the number:** the effectiveness rate rests on GitHub's
+`isOutdated` signal. [`EVAL.md`](EVAL.md) is the honest accounting — including the
+part where an attempt to validate it against commit history revealed that the
+*validation* signal was noisier than `isOutdated` itself, so certification is
+deferred to a human-labelled gold set rather than faked. The confirmed biases ride
+along on every scorecard's caveats.
 
 ## Where competitors are ahead
 

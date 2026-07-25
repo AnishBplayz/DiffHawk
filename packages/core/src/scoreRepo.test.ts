@@ -87,9 +87,37 @@ test('non-AI (human) threads are not counted', () => {
   expect(reviewersSeen).toEqual([{ reviewer: 'CodeRabbit', comments: 1 }]);
 });
 
-test('open PRs surface an honesty caveat', () => {
-  const { scorecard } = scoreRepo(repoWith([thread({ path: 'src/a.ts' })], 'OPEN'), { window: WINDOW });
-  expect(scorecard!.caveats.some((c) => c.includes('still open'))).toBe(true);
+test('open-PR comments are pending, excluded from the rate not counted as failures', () => {
+  const threads = [
+    thread({ path: 'src/a.ts', isOutdated: true }), // would be acted-on if decided
+    thread({ path: 'src/b.ts', isOutdated: false }),
+  ];
+  const { scorecard } = scoreRepo(repoWith(threads, 'OPEN'), { window: WINDOW });
+  expect(scorecard!.totals.pending).toBe(2);
+  expect(scorecard!.totals.decided).toBe(0);
+  expect(scorecard!.totals.effectiveness).toBe(0); // no decided comments, not "0% good"
+  expect(scorecard!.caveats.some((c) => c.includes('still-open'))).toBe(true);
+});
+
+test('mixed open + merged: only decided comments drive the rate', () => {
+  const data: RepoPulls = {
+    owner: 'acme', name: 'api',
+    pulls: [
+      { number: 1, state: 'MERGED', createdAt: '2026-06-01T00:00:00Z', threads: [
+        thread({ path: 'src/a.ts', isOutdated: true }),
+        thread({ path: 'src/b.ts', isOutdated: false }),
+      ] },
+      { number: 2, state: 'OPEN', createdAt: '2026-06-02T00:00:00Z', threads: [
+        thread({ path: 'src/c.ts', isOutdated: false }),
+      ] },
+    ],
+    reviewerLoginsSeen: ['coderabbitai'],
+  };
+  const { scorecard } = scoreRepo(data, { window: WINDOW });
+  expect(scorecard!.totals.comments).toBe(3);
+  expect(scorecard!.totals.decided).toBe(2);
+  expect(scorecard!.totals.pending).toBe(1);
+  expect(scorecard!.totals.effectiveness).toBe(0.5); // 1 of 2 decided, open one ignored
 });
 
 test('a repo with no AI reviewer yields no scorecard, cleanly', () => {

@@ -30,11 +30,19 @@
         "zod": "^4.0.0",
       },
     },
+    "packages/eval": {
+      "name": "@diffhawk/eval",
+      "version": "0.0.0",
+      "dependencies": {
+        "@diffhawk/core": "workspace:*",
+        "@diffhawk/github": "workspace:*",
+      },
+    },
     "packages/github": {
       "name": "@diffhawk/github",
       "version": "0.0.0",
       "dependencies": {
-        "@diffhawk/core": "*",
+        "@diffhawk/core": "workspace:*",
       },
     },
     "packages/ingest": {
@@ -46,6 +54,8 @@
     "@diffhawk/cli": ["@diffhawk/cli@workspace:apps/cli"],
 
     "@diffhawk/core": ["@diffhawk/core@workspace:packages/core"],
+
+    "@diffhawk/eval": ["@diffhawk/eval@workspace:packages/eval"],
 
     "@diffhawk/github": ["@diffhawk/github@workspace:packages/github"],
 

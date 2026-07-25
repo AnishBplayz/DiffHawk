@@ -32,23 +32,33 @@ asset.
 
 ---
 
-## Phase 1 — Trust the number · "the scorecard is honest" · ~3–4 days
+## Phase 1 — Trust the number · "the scorecard is honest" · done
 
-The scorecard is only as good as the outcome signal. Harden it and make its
-limits explicit.
+The scorecard is only as good as the outcome signal. Harden it, and find out how
+far it can actually be trusted.
 
-- [ ] Distinguish *acted-on* (code changed) from *addressed-then-reverted* where
-      detectable; record evidence per outcome
-- [ ] Handle force-push, squash-merge, and rebase — cases where `isOutdated` lies
-      in a known direction; document each in `caveats`
-- [ ] `packages/eval`: replay a labelled set of threads, score the classifier's
-      outcome accuracy against hand labels
-- [ ] Publish DiffHawk's own accuracy on outcome classification in the README
+- [x] Refine the outcome model: `pending` (open PRs) excluded from the rate
+      instead of counted as failures; `merged` vs `closed_unmerged` distinguished
+      so an abandoned PR doesn't read like a merged one; evidence recorded per
+      outcome
+- [x] `packages/eval`: build a ground truth *independent* of `isOutdated` from
+      post-comment commit diffs, freeze it to a corpus, score `isOutdated` against
+      it, and re-score offline
+- [x] Publish the result honestly in [`EVAL.md`](../EVAL.md)
+- [x] Attach the confirmed biases (inflation, deflation, unmerged, pending) to
+      every scorecard's `caveats` at runtime
 
-**Exit gate:** on a hand-labelled set, outcome classification agrees with a human
-on ≥90% of threads, and every systematic disagreement is named in `caveats`. A
-measurement tool that won't state its own error bars is not trustworthy — this is
-the phase that earns the word "measured."
+**Outcome — an honest negative, and the more useful result.** The plan was to hit
+≥90% agreement with a gold set. Instead the investigation showed that the cheap
+automated ground truth is *less* reliable than `isOutdated` itself — line-number
+drift across commits and a three-way coordinate mismatch (HEAD line vs diff
+position vs per-commit patch line) make commit-overlap noisier than the signal it
+was checking, proven by hand-verifying the disagreements. So `isOutdated` is
+retained, its biases are documented on every number, and true certification is
+deferred to a **human-labelled** gold set — which the harness is already built to
+score against. The gate is not claimed as met, because it isn't, and faking it
+would defeat the entire premise. That candor *is* the phase earning the word
+"measured."
 
 ---
 

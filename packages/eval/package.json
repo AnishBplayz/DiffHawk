@@ -1,0 +1,10 @@
+{
+  "name": "@diffhawk/eval",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@diffhawk/core": "workspace:*",
+    "@diffhawk/github": "workspace:*"
+  }
+}

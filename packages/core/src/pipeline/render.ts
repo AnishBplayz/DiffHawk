@@ -48,9 +48,10 @@ export function renderScorecard(s: Scorecard): string {
   L.push('');
   L.push(`  ${bold(s.reviewer)} on ${bold(s.repo)}  ${dim('· ' + s.window.from + ' → ' + s.window.to)}`);
   L.push('');
+  const pendingNote = s.totals.pending > 0 ? `, ${s.totals.pending} pending` : '';
   L.push(
-    `  ${bold(pctColor(eff)(pct(eff)))} of ${s.totals.comments} comments led to a code change` +
-      `  ${dim(`(${s.totals.actedOn} acted-on)`)}`,
+    `  ${bold(pctColor(eff)(pct(eff)))} of ${s.totals.decided} decided comments led to a code change` +
+      `  ${dim(`(${s.totals.actedOn} acted-on${pendingNote})`)}`,
   );
 
   if (s.baseline) {

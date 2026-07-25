@@ -60,11 +60,10 @@ export function scoreRepo(data: RepoPulls, opts: ScoreRepoOptions): ScoreRepoRes
 
   const comments: ReviewComment[] = [];
   const seen = new Map<string, number>();
-  let hadOpenPulls = false;
 
   for (const pull of data.pulls) {
-    if (pull.state === 'OPEN') hadOpenPulls = true;
-    const prClosed = pull.state !== 'OPEN';
+    const prState =
+      pull.state === 'OPEN' ? 'open' : pull.state === 'MERGED' ? 'merged' : 'closed_unmerged';
 
     for (const t of pull.threads) {
       const bot = identifyBot(t.reviewerLogin);
@@ -85,7 +84,7 @@ export function scoreRepo(data: RepoPulls, opts: ScoreRepoOptions): ScoreRepoRes
           createdAt: t.createdAt,
           threadOutdated: t.isOutdated,
           threadResolved: t.isResolved,
-          prClosed,
+          prState,
         }),
       );
     }
@@ -108,7 +107,6 @@ export function scoreRepo(data: RepoPulls, opts: ScoreRepoOptions): ScoreRepoRes
     window: opts.window,
     comments: forReviewer,
     baselineEffectiveness: opts.baseline?.[target],
-    hadOpenPulls,
   });
 
   return { scorecard, reviewersSeen };

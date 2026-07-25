@@ -28,8 +28,8 @@ export const ReviewComment = z.object({
   /** GitHub review-thread signals, carried so OUTCOME needs no second fetch. */
   threadOutdated: z.boolean(),
   threadResolved: z.boolean(),
-  /** True once the PR that carried this comment is closed or merged. */
-  prClosed: z.boolean(),
+  /** PR lifecycle state, so an open PR reads as pending, not as a failure. */
+  prState: z.enum(['open', 'merged', 'closed_unmerged']),
 });
 export type ReviewComment = z.infer<typeof ReviewComment>;
 
@@ -37,8 +37,13 @@ export type ReviewComment = z.infer<typeof ReviewComment>;
  * What became of a comment. `kind` is the headline; `evidence` records the git
  * fact behind it, so every number in a scorecard is auditable back to a
  * verifiable signal rather than a heuristic nobody can re-check.
+ *
+ * `pending` is distinct from `ignored`: a comment on an open PR has no decided
+ * outcome yet. Counting it as a failure deflated the score of every active repo
+ * in Phase 0 — Phase 1 excludes pending from the effectiveness denominator
+ * instead of merely caveating it.
  */
-export const OutcomeKind = z.enum(['acted_on', 'resolved', 'dismissed', 'ignored']);
+export const OutcomeKind = z.enum(['acted_on', 'resolved', 'dismissed', 'ignored', 'pending']);
 export type OutcomeKind = z.infer<typeof OutcomeKind>;
 
 export const Outcome = z.object({
@@ -47,8 +52,9 @@ export const Outcome = z.object({
   evidence: z.enum([
     'thread_outdated', // the anchored code changed after the comment
     'thread_resolved', // a human explicitly resolved the thread
-    'pr_open', // PR still open — outcome not yet decided
-    'pr_closed_unchanged', // PR closed/merged and nothing above fired
+    'pr_open', // PR still open — outcome not yet decided (pending)
+    'pr_merged_unchanged', // PR merged and the code was never touched
+    'pr_abandoned', // PR closed unmerged with no change — the code never shipped
   ]),
 });
 export type Outcome = z.infer<typeof Outcome>;
@@ -72,8 +78,14 @@ export const Scorecard = z.object({
   reviewer: z.string(),
   window: z.object({ from: z.string(), to: z.string() }),
   totals: z.object({
+    /** Every AI comment seen in the window, decided or not. */
     comments: z.number().int(),
+    /** Comments with a decided outcome — the effectiveness denominator. */
+    decided: z.number().int(),
+    /** Comments on still-open PRs, excluded from the rate. */
+    pending: z.number().int(),
     actedOn: z.number().int(),
+    /** actedOn / decided. Undefined-safe: 0 when nothing is decided yet. */
     effectiveness: z.number(),
   }),
   /** Census-relative context, when a baseline is available. */

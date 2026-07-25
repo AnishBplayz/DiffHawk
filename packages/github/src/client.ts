@@ -112,6 +112,61 @@ export class GitHubClient implements VcsProvider {
     return { owner, name, pulls, reviewerLoginsSeen: [...reviewerLoginsSeen] };
   }
 
+  /**
+   * Commits on a pull request, with dates — used by the eval harness to build a
+   * ground truth independent of `isOutdated`. REST, because the per-commit file
+   * patch (below) is only exposed there.
+   */
+  async listPullCommits(owner: string, name: string, pr: number): Promise<Array<{ sha: string; date: string }>> {
+    const out: Array<{ sha: string; date: string }> = [];
+    for (let page = 1; page <= 3; page++) {
+      const rows = await this.#rest<Array<{ sha: string; commit: { committer?: { date?: string }; author?: { date?: string } } }>>(
+        `/repos/${owner}/${name}/pulls/${pr}/commits?per_page=100&page=${page}`,
+      );
+      for (const r of rows) out.push({ sha: r.sha, date: r.commit.committer?.date ?? r.commit.author?.date ?? '' });
+      if (rows.length < 100) break;
+    }
+    return out;
+  }
+
+  /**
+   * The set of changed files in one commit, each mapped to the patch text, so
+   * the caller can compute which new-file line ranges the commit touched.
+   */
+  async getCommitPatches(owner: string, name: string, sha: string): Promise<Map<string, string>> {
+    const data = await this.#rest<{ files?: Array<{ filename: string; patch?: string }> }>(
+      `/repos/${owner}/${name}/commits/${sha}`,
+    );
+    const out = new Map<string, string>();
+    for (const f of data.files ?? []) if (f.patch) out.set(f.filename, f.patch);
+    return out;
+  }
+
+  async #rest<T>(path: string, attempt = 0): Promise<T> {
+    const res = await fetch(`https://api.github.com${path}`, {
+      headers: {
+        Authorization: `bearer ${this.#token}`,
+        'User-Agent': 'diffhawk',
+        Accept: 'application/vnd.github+json',
+      },
+    });
+    if (res.status === 401) throw new GitHubError('GitHub rejected the token (401).');
+    if (res.status === 403 || res.status === 429) {
+      const retryAfter = Number(res.headers.get('retry-after') ?? 30);
+      if (attempt >= 4) throw new RateLimitError(`Rate limited after ${attempt} retries.`);
+      this.#log(`  rate limited, waiting ${retryAfter}s`);
+      await sleep(retryAfter * 1000);
+      return this.#rest<T>(path, attempt + 1);
+    }
+    if (res.status >= 500) {
+      if (attempt >= 4) throw new GitHubError(`GitHub ${res.status} after ${attempt} retries.`);
+      await sleep(Math.min(2 ** attempt * 1000, 16000));
+      return this.#rest<T>(path, attempt + 1);
+    }
+    if (!res.ok) throw new GitHubError(`GitHub ${res.status} on ${path}: ${(await res.text()).slice(0, 160)}`);
+    return (await res.json()) as T;
+  }
+
   async #graphql<T>(query: string, variables: Record<string, unknown>, attempt = 0): Promise<T> {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
