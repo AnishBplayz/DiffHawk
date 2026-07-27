@@ -11,8 +11,10 @@ export function ScoreForm() {
   const [state, action, pending] = useActionState(scoreRepoAction, EMPTY_STATE);
 
   return (
+    // The input stays narrow; the result must not. Constraining the scorecard to
+    // the hero column squeezed its bars down to a 40px stub.
     <div id="score">
-      <form action={action} className="flex flex-col gap-2.5 sm:flex-row">
+      <form action={action} className="flex max-w-[34rem] flex-col gap-2.5 sm:flex-row">
         <label className="sr-only" htmlFor="repo">
           GitHub repository
         </label>

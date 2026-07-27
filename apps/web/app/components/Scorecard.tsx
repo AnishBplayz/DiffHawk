@@ -26,7 +26,10 @@ function BarRow({ bucket, maxComments }: { bucket: Bucket; maxComments: number }
   const confident = bucket.comments >= Math.max(8, maxComments * 0.15);
 
   return (
-    <div className="grid grid-cols-[7.5rem_1fr_auto] items-center gap-x-3 py-[7px] sm:grid-cols-[9rem_1fr_auto] sm:gap-x-4">
+    // The label column must be allowed to SHRINK and the bar column needs a
+    // floor. With a fixed label width these rows collapsed the bar to 0px inside
+    // a narrow container, so the chart silently rendered as a bare table.
+    <div className="grid grid-cols-[minmax(0,7rem)_minmax(2.5rem,1fr)_auto] items-center gap-x-3 py-[7px]">
       <span className="truncate text-[13px] text-ink-secondary" title={bucket.key}>
         {bucket.key}
       </span>
@@ -188,8 +191,10 @@ export function Scorecard({ data, compact = false }: { data: ScorecardData; comp
         </ul>
       )}
 
+      {/* Split only at lg: at sm the two columns are too narrow for a label, a
+          bar and a count to coexist, which collapsed the bars to zero width. */}
       {!compact && data.totals.decided > 0 && (
-        <div className="mt-6 grid gap-7 border-t border-hairline pt-6 sm:grid-cols-2 sm:gap-8">
+        <div className="mt-6 grid gap-7 border-t border-hairline pt-6 lg:grid-cols-2 lg:gap-10">
           <Breakdown title="By severity" buckets={data.bySeverity} />
           <Breakdown title="By area" buckets={data.byArea.slice(0, 7)} />
         </div>

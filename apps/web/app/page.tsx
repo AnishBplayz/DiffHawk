@@ -23,60 +23,56 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* Hero. Four text elements at most: headline, subtext, the form, one note. */}
-      <section className="grid gap-10 pt-14 pb-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] lg:gap-16 lg:pt-24">
-        <div>
-          <h1 className="max-w-[19ch] text-[40px] leading-[1.04] font-medium tracking-tight text-ink sm:text-[54px]">
-            Your AI reviewer comments. Does anyone act on it?
-          </h1>
-          <p className="mt-5 max-w-[52ch] text-[16px] leading-relaxed text-ink-secondary">
-            Paste a repository. DiffHawk reads its review history and measures how often those
-            comments led to real code changes.
-          </p>
-          <div className="mt-8 max-w-[34rem]">
-            <ScoreForm />
-          </div>
+      {/* Hero. Headline, subtext, then the input, all above the fold. The result
+          renders under the form at full width so its bars stay readable. */}
+      <section className="pt-14 pb-20 lg:pt-20">
+        <h1 className="max-w-[19ch] text-[40px] leading-[1.04] font-medium tracking-tight text-ink sm:text-[54px]">
+          Your AI reviewer comments. Does anyone act on it?
+        </h1>
+        <p className="mt-5 max-w-[52ch] text-[16px] leading-relaxed text-ink-secondary">
+          Paste a repository. DiffHawk reads its review history and measures how often those
+          comments led to real code changes.
+        </p>
+        <div className="mt-8">
+          <ScoreForm />
         </div>
+      </section>
 
-        {/* The finding that justifies the tool. Real percentiles, not decoration. */}
-        <aside className="lg:pt-3">
-          <p className="max-w-[34ch] text-[13px] leading-relaxed text-ink-secondary">
-            Across {'1,112'} repositories, an AI reviewer&apos;s comments led to a code change{' '}
-            <span className="nums text-ink">43%</span> of the time on average. That average hides
-            almost everything.
-          </p>
+      {/* The finding that justifies the tool. Real percentiles, not decoration.
+          Its own band, because it is the study's result and not hero garnish. */}
+      <section className="grid gap-8 border-t border-hairline py-12 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:gap-16">
+        <p className="text-[15px] leading-relaxed text-ink-secondary">
+          Across {'1,112'} repositories, an AI reviewer&apos;s comments led to a code change{' '}
+          <span className="nums text-ink">43%</span> of the time on average.{' '}
+          <span className="text-ink">That average hides almost everything.</span>
+        </p>
 
-          <div className="mt-6">
-            <div className="relative h-[3px] rounded-full bg-hairline">
-              {[DIST.p10, DIST.median, DIST.p90].map((p) => (
-                <span
-                  key={p}
-                  className="absolute -top-[5px] h-[13px] w-[2px] rounded-full"
-                  style={{ left: `${p}%`, background: 'var(--accent)' }}
-                  aria-hidden
-                />
-              ))}
-            </div>
-            <div className="nums mt-2.5 flex justify-between text-[11px] text-ink-muted">
-              <span>{DIST.p10}%</span>
-              <span>{DIST.median}%</span>
-              <span>{DIST.p90}%</span>
-            </div>
-            <p className="mt-1 text-[11px] text-ink-muted">
-              10th percentile, median, 90th percentile
-            </p>
+        <div>
+          <div className="relative h-[3px] rounded-full bg-hairline">
+            {[DIST.p10, DIST.median, DIST.p90].map((p) => (
+              <span
+                key={p}
+                className="absolute -top-[5px] h-[13px] w-[2px] rounded-full"
+                style={{ left: `${p}%`, background: 'var(--accent)' }}
+                aria-hidden
+              />
+            ))}
           </div>
-
-          <p className="mt-6 max-w-[34ch] text-[13px] leading-relaxed text-ink-secondary">
+          <div className="nums mt-2.5 flex justify-between text-[11px] text-ink-muted">
+            <span>{DIST.p10}% (10th pct)</span>
+            <span>{DIST.median}% (median)</span>
+            <span>{DIST.p90}% (90th pct)</span>
+          </div>
+          <p className="mt-5 max-w-[62ch] text-[13px] leading-relaxed text-ink-secondary">
             <span className="nums text-ink">{DIST.weakShare}%</span> of repositories run a reviewer
             that is acted on a quarter of the time or less. Some sit near zero. Their teams cannot
             tell, because the only number they have heard is the average.
           </p>
-        </aside>
+        </div>
       </section>
 
       {/* Different layout family: a horizontal band of plain statements, no cards. */}
-      <section className="grid gap-8 border-y border-hairline py-12 sm:grid-cols-3 sm:gap-10">
+      <section className="grid gap-8 border-t border-hairline py-12 sm:grid-cols-3 sm:gap-10">
         <div>
           <h2 className="text-[14px] font-medium text-ink">Measured from git, not guessed</h2>
           <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
