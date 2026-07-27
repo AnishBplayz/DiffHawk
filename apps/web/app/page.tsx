@@ -15,7 +15,7 @@ export default function Home() {
             The study
           </a>
           <a
-            href="https://github.com/AnishBplayz/diffhawk"
+            href="https://github.com/AnishBplayz/DiffHawk"
             className="transition-colors hover:text-ink"
           >
             Source

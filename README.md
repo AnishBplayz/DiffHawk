@@ -1,7 +1,7 @@
 # DiffHawk
 
-**Is the AI code reviewer you already run actually working? DiffHawk measures it —
-then quietly turns off the parts that aren't.**
+**Is the AI code reviewer you already run actually working? DiffHawk measures it,
+compares it to a real baseline, and tells you when it degrades.**
 
 > Status: in development. The measurement thesis behind it is already proven and
 > public — see [the numbers](#the-numbers-this-is-built-on) below.
@@ -138,7 +138,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: AnishBplayz/diffhawk@main
+      - uses: AnishBplayz/DiffHawk@main
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 ```

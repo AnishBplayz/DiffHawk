@@ -24,6 +24,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # so .diffhawk.yml (if any) is read
-      - uses: AnishBplayz/diffhawk@main
+      - uses: AnishBplayz/DiffHawk@main
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
