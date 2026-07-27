@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: AnishBplayz/DiffHawk@main
+      - uses: AnishBplayz/DiffHawk@v0.1.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 ```

@@ -41,7 +41,7 @@ diffhawk score <owner/repo> [options]
 
 Options:
   --reviewer <name>   Score a specific reviewer (default: the most active one)
-  --prs <n>           Recent pulls to inspect (default 60)
+  --prs <n>           Recent pulls to inspect (default 120, enough for a trend)
   --days <n>          Reporting window in days (default 90)
   --json              Emit the raw scorecard as JSON
 

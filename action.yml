@@ -1,5 +1,5 @@
 name: DiffHawk
-description: Measure whether the AI code reviewer running on this repo is actually working, and post a scorecard.
+description: Measure whether an AI code reviewer is actually working on a repo, and post a scorecard.
 author: Anish Bhutra
 branding:
   icon: eye

@@ -16,7 +16,8 @@
     "score": "bun run apps/cli/src/main.ts",
     "eval": "bun run packages/eval/src/run.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:npm": "bun run scripts/build-npm.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
