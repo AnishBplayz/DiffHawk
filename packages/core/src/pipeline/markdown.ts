@@ -43,7 +43,9 @@ export function renderScorecardMarkdown(s: Scorecard): string {
   const L: string[] = [];
   L.push(SCORECARD_MARKER);
   L.push('');
-  L.push(`### 🦅 DiffHawk — is \`${s.reviewer}\` working on this repo?`);
+  // Name the repo rather than saying "this repo": a scorecard can be posted on a
+  // different repository than the one it scores.
+  L.push(`### 🦅 DiffHawk — is \`${s.reviewer}\` working on \`${s.repo}\`?`);
   L.push('');
   const undecided = s.baseline?.verdict === 'insufficient';
 

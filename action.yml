@@ -13,6 +13,9 @@ inputs:
     description: "GitHub token used to read PRs and post the scorecard. Usually secrets.GITHUB_TOKEN."
     required: false
     default: ${{ github.token }}
+  repo:
+    description: "Repository to score as owner/name. Defaults to the repository the workflow runs in. Use this to score another repo and report the scorecard here."
+    required: false
   reviewer:
     description: Restrict scoring to one reviewer (e.g. CodeRabbit). Default auto-detects the most active.
     required: false
@@ -43,6 +46,7 @@ runs:
         bun run apps/action/src/main.ts
       env:
         INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_REPO: ${{ inputs.repo }}
         INPUT_REVIEWER: ${{ inputs.reviewer }}
         INPUT_DAYS: ${{ inputs.days }}
         INPUT_PRS: ${{ inputs.prs }}

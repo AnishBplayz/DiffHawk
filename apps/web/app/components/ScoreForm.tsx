@@ -85,11 +85,23 @@ export function ScoreForm() {
       {!pending && state.scorecard && (
         <div className="mt-7">
           <Scorecard data={state.scorecard} />
-          {state.otherReviewers.length > 0 && (
-            <p className="mt-3 text-[12px] text-ink-muted">
-              Also reviewing here: {state.otherReviewers.join(', ')}. The most active one is scored.
-            </p>
-          )}
+          <div className="mt-3 space-y-1">
+            {state.otherReviewers.length > 0 && (
+              <p className="text-[12px] text-ink-muted">
+                Also reviewing here: {state.otherReviewers.join(', ')}. The most active one is
+                scored.
+              </p>
+            )}
+            {state.cachedMinutesAgo !== null && (
+              <p className="text-[12px] text-ink-muted">
+                Served from cache,{' '}
+                {state.cachedMinutesAgo === 0
+                  ? 'computed moments ago'
+                  : `computed ${state.cachedMinutesAgo} minute${state.cachedMinutesAgo === 1 ? '' : 's'} ago`}
+                . This shared demo caches results to stay inside GitHub&apos;s hourly quota.
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

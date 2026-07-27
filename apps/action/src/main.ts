@@ -54,16 +54,31 @@ function eventPrNumber(): number | null {
 }
 
 async function main(): Promise<number> {
-  const repoSlug = process.env.GITHUB_REPOSITORY;
-  if (!repoSlug) {
+  const hostSlug = process.env.GITHUB_REPOSITORY;
+  if (!hostSlug) {
     process.stderr.write('GITHUB_REPOSITORY not set — is this running in GitHub Actions?\n');
     return 1;
   }
-  const [owner, name] = repoSlug.split('/');
-  if (!owner || !name) {
-    process.stderr.write(`Bad GITHUB_REPOSITORY: ${repoSlug}\n`);
+  const [hostOwner, hostName] = hostSlug.split('/');
+  if (!hostOwner || !hostName) {
+    process.stderr.write(`Bad GITHUB_REPOSITORY: ${hostSlug}\n`);
     return 1;
   }
+
+  /**
+   * The repo being SCORED may differ from the repo the workflow runs in.
+   *
+   * Reporting always stays on the host repo: writing a comment into someone
+   * else's repository is not something a measurement tool should do, and the
+   * token usually could not anyway.
+   */
+  const target = (input('repo') ?? hostSlug).replace(/^https?:\/\/github\.com\//, '');
+  const [owner, name] = target.split('/');
+  if (!owner || !name) {
+    process.stderr.write(`Bad repo input: "${target}". Expected owner/name.\n`);
+    return 1;
+  }
+  const scoringSelf = `${owner}/${name}`.toLowerCase() === hostSlug.toLowerCase();
 
   const token = input('token') ?? resolveToken();
   if (!token) {
@@ -79,7 +94,11 @@ async function main(): Promise<number> {
 
   const client = new GitHubClient({ token, onLog: (m) => process.stderr.write(m + '\n') });
 
-  process.stderr.write(`Scoring ${repoSlug} (window ${windowDays}d, ${prLimit} PRs)…\n`);
+  process.stderr.write(
+    `Scoring ${owner}/${name} (window ${windowDays}d, ${prLimit} PRs)` +
+      (scoringSelf ? '' : `, reporting on ${hostSlug}`) +
+      '…\n',
+  );
   let data;
   try {
     data = await client.fetchRepoPulls(owner, name, prLimit);
@@ -120,13 +139,21 @@ async function main(): Promise<number> {
   }
 
   try {
-    const prNumber = eventPrNumber();
+    // Comments go to the HOST repo, never the scored one.
+    const prNumber = scoringSelf ? eventPrNumber() : null;
     if (prNumber) {
-      const r = await client.upsertMarkedComment(owner, name, prNumber, SCORECARD_MARKER, md);
+      const r = await client.upsertMarkedComment(hostOwner, hostName, prNumber, SCORECARD_MARKER, md);
       process.stderr.write(`Scorecard ${r} on PR #${prNumber}\n`);
     } else {
-      const issue = await client.findOrCreateTrackingIssue(owner, name, 'DiffHawk scorecard', SCORECARD_MARKER);
-      const r = await client.upsertMarkedComment(owner, name, issue, SCORECARD_MARKER, md);
+      const title = scoringSelf ? 'DiffHawk scorecard' : `DiffHawk scorecard: ${owner}/${name}`;
+      // Marker is per-target so scoring several repos keeps one issue each
+      // instead of fighting over a single thread. It must also be present in the
+      // BODY, otherwise the next run cannot find its own comment and appends a
+      // new one every time, which is the duplicate wall this design avoids.
+      const marker = scoringSelf ? SCORECARD_MARKER : `${SCORECARD_MARKER}<!-- target:${owner}/${name} -->`;
+      const body = scoringSelf ? md : md.replace(SCORECARD_MARKER, marker);
+      const issue = await client.findOrCreateTrackingIssue(hostOwner, hostName, title, marker);
+      const r = await client.upsertMarkedComment(hostOwner, hostName, issue, marker, body);
       process.stderr.write(`Scorecard ${r} on tracking issue #${issue}\n`);
     }
   } catch (err) {

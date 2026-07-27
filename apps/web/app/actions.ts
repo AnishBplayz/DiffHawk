@@ -4,9 +4,19 @@ import { scoreRepo } from '@diffhawk/core';
 import { GitHubClient, GitHubError } from '@diffhawk/github';
 import { CENSUS_BASELINE } from '@diffhawk/ingest';
 import { EMPTY_STATE, type ScoreState } from './score-state.ts';
+import { readCache, writeCache, ageMinutes } from './cache.ts';
 
 const WINDOW_DAYS = 90;
-const PR_LIMIT = 120; // covers two windows so the trend has prior data
+/**
+ * Lower than the CLI's 120 on purpose.
+ *
+ * Measured cost is ~64 GraphQL points at 120 pulls against a 5,000/hour budget,
+ * i.e. about 78 scorings per hour before the shared demo token is exhausted. One
+ * page of 50 keeps a single request cheap; the trade is that trend detection
+ * needs two windows of history and often will not have it here, so the scorecard
+ * simply omits the trend rather than inventing one.
+ */
+const PR_LIMIT = 50;
 
 /** Accepts `owner/repo`, a full GitHub URL, or a `.git` suffix. */
 function parseSlug(input: string): { owner: string; name: string } | null {
@@ -40,18 +50,38 @@ export async function scoreRepoAction(_prev: ScoreState, formData: FormData): Pr
     };
   }
 
+  // Serve a recent result rather than spending budget on a repeat lookup.
+  const cached = readCache(owner, name);
+  if (cached) {
+    return {
+      scorecard: cached.scorecard,
+      otherReviewers: cached.otherReviewers,
+      error: null,
+      repo,
+      cachedMinutesAgo: ageMinutes(cached.at),
+    };
+  }
+
   const client = new GitHubClient({ token });
 
   let data;
   try {
     data = await client.fetchRepoPulls(owner, name, PR_LIMIT);
   } catch (err) {
-    const message =
-      err instanceof GitHubError
-        ? err.message.includes('not found')
-          ? `Could not find a public repository at ${repo}.`
-          : err.message
-        : 'Something went wrong reading that repository.';
+    let message = 'Something went wrong reading that repository.';
+    if (err instanceof GitHubError) {
+      if (/not found/i.test(err.message)) {
+        message = `Could not find a public repository at ${repo}.`;
+      } else if (/rate limit/i.test(err.message)) {
+        // Say what actually happened. "Something went wrong" would leave people
+        // thinking the tool is broken when it is only out of budget.
+        message =
+          'This shared demo has used up its hourly GitHub quota. Try again shortly, or run it locally against your own token: bun run score ' +
+          repo;
+      } else {
+        message = err.message;
+      }
+    }
     return { ...EMPTY_STATE, repo, error: message };
   }
 
@@ -74,10 +104,10 @@ export async function scoreRepoAction(_prev: ScoreState, formData: FormData): Pr
     };
   }
 
-  return {
-    scorecard,
-    otherReviewers: reviewersSeen.map((r) => r.reviewer).filter((r) => r !== scorecard.reviewer),
-    error: null,
-    repo,
-  };
+  const otherReviewers = reviewersSeen
+    .map((r) => r.reviewer)
+    .filter((r) => r !== scorecard.reviewer);
+
+  writeCache(owner, name, { scorecard, otherReviewers });
+  return { scorecard, otherReviewers, error: null, repo, cachedMinutesAgo: null };
 }

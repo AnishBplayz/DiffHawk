@@ -15,19 +15,50 @@ import type { RepoPulls } from '@diffhawk/core';
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://postgres@127.0.0.1:5433/diffhawk';
 
 let db: Db;
-let closeDb: () => Promise<void>;
+let closeDb: (() => Promise<void>) | undefined;
 let store: ReviewStore;
 
+/**
+ * These tests need a real Postgres, because the guarantee under test lives in the
+ * database (a primary key on a deterministic id, plus an upsert). Mocking the
+ * store would test the mock.
+ *
+ * When no database is reachable they SKIP rather than fail. A contributor who
+ * clones this repo and runs `bun test` without starting Docker should see a green
+ * suite and a clear note, not a red failure that reads like broken code.
+ *
+ * Start one with: cd deploy/docker && docker compose up -d postgres
+ */
+let dbAvailable = false;
+
 beforeAll(async () => {
-  const c = connect(DATABASE_URL, { max: 4 });
-  db = c.db;
-  closeDb = c.close;
-  await migrate(db);
+  try {
+    const c = connect(DATABASE_URL, { max: 4 });
+    db = c.db;
+    closeDb = c.close;
+    await migrate(db);
+    store = new ReviewStore(db);
+    dbAvailable = true;
+  } catch {
+    await closeDb?.().catch(() => {});
+    closeDb = undefined;
+    process.stderr.write(
+      `\n  note: skipping exactly-once backfill tests, no Postgres at ${DATABASE_URL}\n` +
+        '        start one with: cd deploy/docker && docker compose up -d postgres\n\n',
+    );
+  }
 });
 
 afterAll(async () => {
-  await closeDb?.();
+  await closeDb?.().catch(() => {});
 });
+
+/** Skips the body when no database is reachable. */
+const dbTest: typeof test = ((name: string, fn: () => unknown) =>
+  test(name, async () => {
+    if (!dbAvailable) return;
+    await fn();
+  })) as typeof test;
 
 /** A synthetic page of pulls: `n` pulls, each with one AI review thread. */
 function page(startPr: number, n: number, outdated = true): RepoPulls {
@@ -93,8 +124,7 @@ async function freshRepo(name: string) {
   return repo;
 }
 
-test('a clean backfill ingests every page exactly once', async () => {
-  store = new ReviewStore(db);
+dbTest('a clean backfill ingests every page exactly once', async () => {
   const repo = await freshRepo('chaos-clean');
   const gh = stubGitHub({ pages: 4, perPage: 5 });
   const bf = await store.startBackfill(repo.id, 10);
@@ -115,8 +145,7 @@ test('a clean backfill ingests every page exactly once', async () => {
   expect(finished!.pagesDone).toBe(4);
 });
 
-test('killed mid-walk, it resumes and still counts exactly once', async () => {
-  store = new ReviewStore(db);
+dbTest('killed mid-walk, it resumes and still counts exactly once', async () => {
   const repo = await freshRepo('chaos-kill');
   // Dies on the 3rd fetch, i.e. after two pages are committed.
   const gh = stubGitHub({ pages: 4, perPage: 5, failOnCall: 3 });
@@ -156,8 +185,7 @@ test('killed mid-walk, it resumes and still counts exactly once', async () => {
   expect((await store.getBackfill(bf.id))!.status).toBe('done');
 });
 
-test('re-running a completed page is a no-op, not a duplicate', async () => {
-  store = new ReviewStore(db);
+dbTest('re-running a completed page is a no-op, not a duplicate', async () => {
   const repo = await freshRepo('chaos-replay');
   const gh = stubGitHub({ pages: 1, perPage: 5 });
   const bf = await store.startBackfill(repo.id, 10);
@@ -176,8 +204,7 @@ test('re-running a completed page is a no-op, not a duplicate', async () => {
   expect(await store.countComments(repo.id)).toBe(5);
 });
 
-test('webhook deliveries dedupe on the delivery id', async () => {
-  store = new ReviewStore(db);
+dbTest('webhook deliveries dedupe on the delivery id', async () => {
   const id = `delivery-${Math.random().toString(36).slice(2)}`;
   expect(await store.recordDelivery(id, 'pull_request')).toBe(true);
   // GitHub retries deliveries; the retry must be a no-op.

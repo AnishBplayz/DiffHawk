@@ -1,131 +1,76 @@
 # DiffHawk
 
-**Is the AI code reviewer you already run actually working? DiffHawk measures it,
-compares it to a real baseline, and tells you when it degrades.**
+**Is the AI code reviewer on your repo actually working? DiffHawk measures it,
+compares it against a real baseline, and tells you when it degrades.**
 
-> Status: in development. The measurement thesis behind it is already proven and
-> public — see [the numbers](#the-numbers-this-is-built-on) below.
+[![tests](https://img.shields.io/badge/tests-47%20passing-brightgreen)](#verification)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![study](https://img.shields.io/badge/built%20on-1%2C112%20repos-informational)](https://github.com/AnishBplayz/ai-reviewer-census)
+
+```
+  Gemini on kubeedge/kubeedge  · 2026-04-28 → 2026-07-27
+
+  65% of 26 decided comments led to a code change  (17 acted-on, 16 pending)
+  census global for Gemini: 44%  — this repo is above average  ·  sharp — earning its place
+
+  by severity
+    critical     ████████░░░░░░░░   50%  2/4
+    high         █████████████░░░   80%  4/5
+    unknown      ██████████░░░░░░   65%  11/17
+```
+
+That output is real, from a live run. Everything below is measured, and where a
+number is soft this README says so.
 
 ---
 
 ## The problem
 
-Your team turned on an AI code reviewer months ago. It leaves comments on every
-PR. Nobody knows if it's helping.
+Your team turned on an AI code reviewer months ago. It comments on every PR.
+Nobody knows whether it's helping.
 
-I measured this properly before building anything. Across **1,112 public
-repositories and 28,000+ pull requests** ([AI Code Review
-Census](https://github.com/AnishBplayz/ai-reviewer-census)):
+I measured that before building anything. Across **1,112 public repositories and
+28,000+ pull requests** ([AI Code Review
+Census](https://github.com/AnishBplayz/ai-reviewer-census), raw data included):
 
 - **~38%** of active repos run an AI reviewer.
-- Their comments lead to a code change **44%** of the time — but that average is a
-  lie. Broken out per repo it runs from **13% (p10) to 69% (p90)**, and **~1 in 5
-  repos sit at ≤25%** — some at 0–3%, a reviewer doing effectively nothing.
-- The teams running those failing reviewers can't tell, because the only number
-  they've heard is the global average.
+- Their comments lead to a code change **43%** of the time. **That average is
+  the problem**, not the finding: per repo it ranges from **14% (p10) to 70%
+  (p90)**, and **1 in 5 repos sit at ≤25%** — some at 0–3%, a reviewer doing
+  effectively nothing.
+- Those teams cannot tell, because the only number they have heard is the
+  average.
 
-So the question "is the AI reviewer on *my* repo actually working?" has a real,
-wildly-varying answer that nobody measures — and the vendor never will, because it
-isn't a neutral party about its own value.
+The vendor will never tell them either. A reviewer vendor is not a neutral party
+about its own value.
 
 ## What DiffHawk does
 
-1. **Measure.** Ingest your reviewer's comments and track what actually happened
-   to each — did the code change, was it resolved, dismissed, ignored — broken out
-   by severity and area. The core signal is git state, not an LLM guessing, so
-   it's cheap and can't be gamed by wording.
+**1. Measures.** Reads your reviewer's comments and what became of each: did the
+anchored code change, was the thread resolved, dismissed, or ignored. The signal
+is git state, not a model's opinion, so it costs nothing and cannot be gamed by
+how a comment is worded.
 
-2. **Report.** A per-repo scorecard that answers *is this reviewer working here?*:
+**2. Compares.** Your rate against the census baseline for that same reviewer, so
+you learn whether the number is *good* — not just what it is.
 
-   ```
-   CodeRabbit on your-org/api · 90 days
-     312 comments · 18% led to a code change · $0.31 / acted-on comment
-     Global average is 37%. On your repo it's half that — bottom ~15%.
+**3. Flags.** Each window against the one before it. A reviewer that quietly got
+worse after a model update is invisible from the outside and obvious in a trend.
 
-     by severity     acted on
-       high             41%     the useful part
-       medium           14%
-       low / nitpick     4%     60% of the volume, ~none of the value
-   ```
+## Try it
 
-3. **Flag.** Track the number over time and raise it when the reviewer degrades
-   (a drop from 45% to 20% after a model change is invisible from the outside) or
-   when it simply isn't earning its place — with a number behind the decision to
-   tune or drop it, instead of a vibe.
-
-DiffHawk keeps the tool you already pay for. It just tells you the truth about
-whether it works — which, for one repo in five, is "it doesn't, and you didn't
-know."
-
-> **Honesty note:** an earlier draft of this README claimed the noise clusters on
-> generated files and lockfiles and that DiffHawk would auto-suppress it there.
-> The census disproved it — those paths are 0.8% of all AI comments; reviewers
-> already skip them. The ignored comments are spread across real source code. The
-> pitch above is what the data actually supports. Measuring first is the whole
-> point of this project, so the docs follow the measurements even when it's
-> inconvenient.
-
-## What it is not
-
-- Not another reviewer competing on comment volume. It *measures* reviewers;
-  being one is an optional, secondary component.
-- Not a bot consolidator — the census showed only ~12% of teams run 2+ reviewers,
-  so that product doesn't have a market.
-- Not an auto-muter or merger. It reads, measures, and recommends; humans decide.
-
-## The numbers this is built on
-
-| | |
-|---|---|
-| Repositories studied | 1,112 (and growing) |
-| Pull requests | 28,000+ |
-| Run any AI reviewer | ~38% |
-| Run 2+ | ~12% |
-| AI comments that changed code (average) | 44% |
-| …per-repo range (p10–p90) | 13% – 69% |
-| Repos where the reviewer is acted on ≤25% | ~19% |
-
-Full study, method, limitations, and raw data:
-**[AI Code Review Census](https://github.com/AnishBplayz/ai-reviewer-census)**.
-
-## Try it (Phase 0 — the scoring engine + CLI)
-
-Requires [Bun](https://bun.sh). Read-only; it only reads public pull requests and
-uses `GITHUB_TOKEN` or falls back to `gh auth token`.
+Requires [Bun](https://bun.sh). Read-only: it reads public pull requests and
+writes nothing.
 
 ```bash
 bun install
-bun run score maximhq/bifrost        # a reviewer that's earning its place (~68%)
-bun run score <owner>/<repo>          # your repo
+bun run score kubeedge/kubeedge     # a reviewer earning its place
+bun run score <owner>/<repo>        # yours
 ```
 
-Sample output:
+Auth uses `GITHUB_TOKEN`, falling back to `gh auth token`.
 
-```
-  CodeRabbit on maximhq/bifrost  · 2026-04-24 → 2026-07-23
-
-  68% of 130 comments led to a code change  (89 acted-on)
-  census global for CodeRabbit: 37%  — this repo is above average  ·  sharp — earning its place
-
-  by severity
-    high         ████████████████   97%  65/67
-    unknown      ██████░░░░░░░░░░   35%  19/54
-  ...
-```
-
-The census makes the comparison possible: `bun run score` knows the global
-per-reviewer baseline, so it can tell you not just *your* number but whether it's
-good. Run it on a few repos and you'll see the same 25%–70% spread the census
-found — that variance, per repo, is the whole point.
-
-`bun test` runs the pure-engine suite (outcome classification, severity
-inference, diff parsing, and the full scoring pipeline against fixtures — no
-network).
-
-## Run it on your repo (GitHub Action)
-
-Drop this in `.github/workflows/diffhawk.yml`. No server, no signup, no API key —
-it uses the built-in `GITHUB_TOKEN`:
+### As a GitHub Action
 
 ```yaml
 name: DiffHawk scorecard
@@ -143,11 +88,13 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-It posts **one** scorecard comment and edits it in place on every later run —
-never a wall of duplicates. (A tool that measures reviewer noise had better not
-generate any.) The scorecard also lands in the workflow's job summary.
+It posts **one** scorecard comment and edits it in place forever after. A tool
+that measures reviewer noise had better not generate any. Optional inputs:
+`repo` (score a different repository and report here), `reviewer`, `days`,
+`prs`, `post`.
 
-Optional `.diffhawk.yml`:
+<details>
+<summary>Optional <code>.diffhawk.yml</code></summary>
 
 ```yaml
 window_days: 90
@@ -158,36 +105,81 @@ flags:
 report:
   post_scorecard: true     # false = job summary only
 ```
+</details>
 
-**Trend detection** compares each window against the one before it, so a reviewer
-that quietly got worse after a model update shows up as
-`📉 −22 pts (was 51%)` — something no vendor dashboard will tell you.
+### Self-hosted, at fleet scale
 
-**How far to trust the number:** the effectiveness rate rests on GitHub's
-`isOutdated` signal. [`EVAL.md`](EVAL.md) is the honest accounting — including the
-part where an attempt to validate it against commit history revealed that the
-*validation* signal was noisier than `isOutdated` itself, so certification is
-deferred to a human-labelled gold set rather than faked. The confirmed biases ride
-along on every scorecard's caveats.
+```bash
+cd deploy/docker && docker compose up -d --build
+curl -X POST "localhost:3200/repos/OWNER/NAME/backfill?maxPages=5"
+curl "localhost:3200/repos/OWNER/NAME/scorecard"
+```
+
+NestJS API + BullMQ workers + Postgres + Redis. Walking years of review history
+is a genuine distributed job, which is why there's a queue rather than a cron.
+See [deploy/docker/README.md](deploy/docker/README.md).
+
+## How far to trust the number
+
+This is the section most tools don't write.
+
+"Acted on" means the code the comment points at changed afterwards. That is a
+**proxy for influence, not proof of correctness**, and it is wrong in two known
+directions: a rebase touching the same lines counts when it shouldn't, and a fix
+made elsewhere in the file doesn't count when it should. Both are printed on
+every scorecard, next to the number they affect.
+
+I tried to validate that signal against an independent ground truth built from
+commit history. **It failed** — the validation signal turned out noisier than the
+thing it was validating, because of line drift across commits and a three-way
+coordinate mismatch. So `isOutdated` is retained, the biases are documented, and
+certification is deferred to a human-labelled set rather than faked. The full
+accounting, including the numbers that look bad, is in **[EVAL.md](EVAL.md)**.
+
+## What it is not
+
+- **Not another reviewer.** It measures them. Being one is optional and last.
+- **Not a bot consolidator.** The census killed that: only ~12% of repos run 2+
+  reviewers and ~10% of their comments overlap.
+- **Not an auto-muter.** An earlier design suppressed reviewers on "noisy" paths.
+  The census killed that too — those paths are 0.8% of all comments because
+  reviewers already skip them, and a comment nobody acted on is not proven
+  wrong. It reports and flags; humans decide.
+
+Three product ideas died to data before any of them was built. That is the
+method, not an anecdote.
 
 ## Where competitors are ahead
 
-Honest, because it's the fast way to earn trust:
-
-- The reviewer vendors are far more polished and have deep IDE/CI integration.
+- The reviewer vendors are far more polished, with deep IDE and CI integration.
 - [Martian's Code Review Bench](https://codereview.withmartian.com/) is the
-  established *global* benchmark — DiffHawk is the *per-repo* instrument, a
-  different job.
-- DiffHawk has no whole-repo semantic index in v1, so it will miss cross-file
-  architectural issues. Stated plainly rather than overclaimed.
+  established **global** benchmark. DiffHawk is the **per-repo** instrument. A
+  global F1 score cannot tell you your reviewer is useless on *your* codebase.
+- No whole-repo semantic index in v1, so cross-file architectural issues are
+  missed. Stated plainly rather than overclaimed.
+
+## Verification
+
+Not "it should work" — what was actually run:
+
+| Claim | How it was checked |
+|---|---|
+| Engine correctness | 47 tests, no network, fixtures |
+| Exactly-once ingest | worker killed mid-backfill, resumed: **exactly 20 comments, not 25 or 30** |
+| Under concurrency | 3 replicas, 3 simultaneous backfills of one repo: **221 → 221** |
+| Webhook security | valid, replayed, bad signature, tampered body → 202, dedupe, 400, 400 |
+| Graceful shutdown | `docker compose stop` → every replica **exit 0**, drained |
+| The Action | run on this repo; posts a scorecard, then **updates it in place** |
+| Cost | measured at **~64 GraphQL points per scoring**, which is why the demo caches |
 
 ## Design & docs
 
-- [Positioning](docs/POSITIONING.md) — the thesis, the data, competitive position
-- [Architecture](docs/ARCHITECTURE.md) — the engine, the systems layer, threat model
-- [Roadmap](docs/ROADMAP.md) — phased build order, launch, résumé lines
-- [Decisions](docs/DECISIONS.md) — ADRs, including the ones the data reversed
+- [Positioning](docs/POSITIONING.md) — thesis, data, honest competitive position
+- [Architecture](docs/ARCHITECTURE.md) — pipeline, systems layer, threat model
+- [Roadmap](docs/ROADMAP.md) — phases, what's done, what isn't
+- [Decisions](docs/DECISIONS.md) — ADRs, including the ones data reversed
+- [EVAL.md](EVAL.md) — how far the core signal can be trusted
 
 ## License
 
-Apache-2.0.
+Apache-2.0. Reads public pull requests; writes only a scorecard comment.

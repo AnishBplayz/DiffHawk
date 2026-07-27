@@ -12,6 +12,11 @@ export interface ScoreState {
   otherReviewers: string[];
   error: string | null;
   repo: string | null;
+  /**
+   * Age of a cached result, or null when freshly fetched. Surfaced in the UI so a
+   * stale number is never presented as live.
+   */
+  cachedMinutesAgo: number | null;
 }
 
 export const EMPTY_STATE: ScoreState = {
@@ -19,4 +24,5 @@ export const EMPTY_STATE: ScoreState = {
   otherReviewers: [],
   error: null,
   repo: null,
+  cachedMinutesAgo: null,
 };
