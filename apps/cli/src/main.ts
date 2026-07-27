@@ -21,7 +21,8 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { repo: null, prLimit: 60, windowDays: 90, json: false };
+  // Default PR count covers two windows so trend detection has prior data.
+  const args: Args = { repo: null, prLimit: 120, windowDays: 90, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--reviewer') args.reviewer = argv[++i];
@@ -92,6 +93,7 @@ async function main(): Promise<number> {
     reviewer: args.reviewer,
     baseline: CENSUS_BASELINE,
     window: { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) },
+    detectTrend: true,
   });
 
   if (!scorecard) {

@@ -1,0 +1,29 @@
+name: DiffHawk scorecard
+
+# Dogfood: DiffHawk scores the AI reviewer running on DiffHawk itself, in the
+# open. Runs weekly (a fresh scorecard on the tracking issue) and on every PR
+# (a scorecard comment for that change). This is the example a stranger copies.
+
+on:
+  schedule:
+    - cron: "23 6 * * 1" # Mondays, 06:23 UTC (off-the-hour on purpose)
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: diffhawk-scorecard-${{ github.event.pull_request.number || 'scheduled' }}
+  cancel-in-progress: true
+
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # so .diffhawk.yml (if any) is read
+      - uses: AnishBplayz/diffhawk@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

@@ -62,16 +62,39 @@ would defeat the entire premise. That candor *is* the phase earning the word
 
 ---
 
-## Phase 2 — GitHub Action + Flags · "it watches over time" · ~4–5 days
+## Phase 2 — GitHub Action + Flags · "it watches over time" · done
 
 Ship the low-friction surface and the trend/degradation signal.
 
-- [ ] `action/` — bundled; posts a scorecard comment on a schedule via `GITHUB_TOKEN`
-- [ ] `.diffhawk.yml` parse + defaults; `packages/config`
-- [ ] Trend + degradation: compare each window against the trailing one and flag
-      material drops; flag bottom-decile-vs-census
-- [ ] Idempotent scorecard comments via a hidden marker (no duplicate walls)
-- [ ] **Dogfood: DiffHawk scores DiffHawk's reviewer, publicly, on every PR**
+- [x] `action.yml` composite Action + `apps/action` entrypoint; posts via
+      `GITHUB_TOKEN`, writes the job summary, never fails the build on a post error
+- [x] `.diffhawk.yml` parse + defaults (`packages/config`), snake_case tolerant,
+      loud on invalid values instead of silently defaulting
+- [x] **Real window filtering** — until now `window` was only a label and scoring
+      used the whole fetch, conflating "last 90 days" with "the last N PRs"
+- [x] Trend + degradation: compare each window against the equal-length one
+      before it, flag material drops, suppress the flag on thin samples
+- [x] Idempotent scorecard comments via a hidden marker (no duplicate walls)
+- [x] `.github/workflows/diffhawk.yml` — dogfood workflow, weekly + per-PR
+
+**Two bugs the live smoke test caught, both worth recording:**
+
+1. **A verdict invented from nothing.** With every recent PR still open, the
+   scorecard rendered `0% · noise — barely acted on`. Zero decided comments is
+   *insufficient data*, not a bad reviewer. Added an `insufficient` verdict below
+   10 decided comments, and suppressed the "below average" comparison with it.
+2. **Discarding decided successes.** Phase 1 marked every open-PR comment
+   `pending`, including ones whose code had *already* changed — an observed fact a
+   later merge cannot undo. On one real repo that hid 76 of 90 comments and
+   dropped the sample below any verdict at all. Now: already-changed counts,
+   only genuinely-untouched-and-open pends. The same repo went from
+   "29% of 14 decided" to "81% of 54 decided".
+
+**Validated, not assumed:** the degradation threshold could have been confounded
+by comment age, so it was measured against the census — outdated-rate moves ~4 pts
+from the first week to 7–90 days and then *declines*, non-monotonically. It cannot
+manufacture a false degradation, and the 15pt default sits clear of it. Written up
+in [`EVAL.md`](../EVAL.md).
 
 > **Not in this phase, on purpose:** automatic path-based suppression. The census
 > showed noise is not path-separable (generated/lock/migration paths are 0.8% of

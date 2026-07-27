@@ -38,6 +38,7 @@ const VERDICT_LABEL: Record<NonNullable<Scorecard['baseline']>['verdict'], strin
   typical: 'typical for this reviewer',
   weak: yellow('weak — below par here'),
   noise: red('noise — barely acted on'),
+  insufficient: dim('not enough decided comments to judge'),
 };
 
 /** Render a scorecard as a terminal report. Pure string in, string out. */
@@ -49,17 +50,40 @@ export function renderScorecard(s: Scorecard): string {
   L.push(`  ${bold(s.reviewer)} on ${bold(s.repo)}  ${dim('· ' + s.window.from + ' → ' + s.window.to)}`);
   L.push('');
   const pendingNote = s.totals.pending > 0 ? `, ${s.totals.pending} pending` : '';
-  L.push(
-    `  ${bold(pctColor(eff)(pct(eff)))} of ${s.totals.decided} decided comments led to a code change` +
-      `  ${dim(`(${s.totals.actedOn} acted-on${pendingNote})`)}`,
-  );
+  const undecided = s.baseline?.verdict === 'insufficient';
+
+  if (s.totals.decided === 0) {
+    L.push(
+      `  ${yellow('No decided comments yet')} — all ${s.totals.pending} are on open PRs.` +
+        `  ${dim('Nothing to score until they close.')}`,
+    );
+  } else {
+    L.push(
+      `  ${bold(pctColor(eff)(pct(eff)))} of ${s.totals.decided} decided comments led to a code change` +
+        `  ${dim(`(${s.totals.actedOn} acted-on${pendingNote})`)}`,
+    );
+  }
 
   if (s.baseline) {
     const g = s.baseline.globalEffectiveness;
-    const rel =
-      eff < g * 0.85 ? red('below') : eff > g * 1.15 ? green('above') : 'about';
+    // Only compare against the baseline when the sample can support it — a
+    // "below average" claim off 3 comments is noise dressed as a finding.
+    if (undecided) {
+      L.push(`  ${dim('census global for ' + s.reviewer + ':')} ${pct(g)}  ·  ${VERDICT_LABEL[s.baseline.verdict]}`);
+    } else {
+      const rel = eff < g * 0.85 ? red('below') : eff > g * 1.15 ? green('above') : 'about';
+      L.push(
+        `  ${dim('census global for ' + s.reviewer + ':')} ${pct(g)}  ${dim('— this repo is')} ${rel} ${dim('average')}  ·  ${VERDICT_LABEL[s.baseline.verdict]}`,
+      );
+    }
+  }
+
+  if (s.trend) {
+    const d = s.trend.deltaPts;
+    const sign = d >= 0 ? '+' : '';
+    const col = d <= -2 ? red : d >= 2 ? green : (x: string) => x;
     L.push(
-      `  ${dim('census global for ' + s.reviewer + ':')} ${pct(g)}  ${dim('— this repo is')} ${rel} ${dim('average')}  ·  ${VERDICT_LABEL[s.baseline.verdict]}`,
+      `  ${dim('trend vs previous window:')} ${col(`${sign}${d.toFixed(0)} pts`)}  ${dim(`(was ${pct(s.trend.previousEffectiveness)})`)}`,
     );
   }
   L.push('');

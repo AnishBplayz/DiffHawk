@@ -15,16 +15,19 @@ import type { ReviewComment, Outcome } from '../schemas.ts';
 export function classifyOutcome(c: ReviewComment): Outcome {
   const id = c.id;
 
-  // Open PR: undecided. Excluded from scoring so a fresh window isn't punished.
-  if (c.prState === 'open') {
-    return { commentId: id, kind: 'pending', evidence: 'pr_open' };
+  // Checked BEFORE the open-PR test, deliberately. If the anchored code has
+  // already changed, that is an observed, completed fact — the comment led to a
+  // change, and a PR merging later cannot undo it. Treating open-but-outdated as
+  // "pending" discarded decided successes: on one real repo it hid 76 of 90
+  // comments, dropping the sample below the threshold for any verdict at all.
+  if (c.threadOutdated) {
+    return { commentId: id, kind: 'acted_on', evidence: 'thread_outdated' };
   }
 
-  if (c.threadOutdated) {
-    // The anchored code changed after the comment. Our action proxy. This fires
-    // for merged and closed-unmerged alike — the reviewer influenced a change;
-    // whether it shipped is a separate dimension surfaced in caveats.
-    return { commentId: id, kind: 'acted_on', evidence: 'thread_outdated' };
+  // Open PR with the code untouched: genuinely undecided. The author may still
+  // address it, so it is excluded from the rate rather than counted as failure.
+  if (c.prState === 'open') {
+    return { commentId: id, kind: 'pending', evidence: 'pr_open' };
   }
 
   if (c.threadResolved) {

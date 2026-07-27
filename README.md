@@ -122,6 +122,47 @@ found — that variance, per repo, is the whole point.
 inference, diff parsing, and the full scoring pipeline against fixtures — no
 network).
 
+## Run it on your repo (GitHub Action)
+
+Drop this in `.github/workflows/diffhawk.yml`. No server, no signup, no API key —
+it uses the built-in `GITHUB_TOKEN`:
+
+```yaml
+name: DiffHawk scorecard
+on:
+  schedule: [{ cron: "23 6 * * 1" }]   # weekly
+  pull_request:
+permissions: { contents: read, issues: write, pull-requests: write }
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: AnishBplayz/diffhawk@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+It posts **one** scorecard comment and edits it in place on every later run —
+never a wall of duplicates. (A tool that measures reviewer noise had better not
+generate any.) The scorecard also lands in the workflow's job summary.
+
+Optional `.diffhawk.yml`:
+
+```yaml
+window_days: 90
+reviewers: auto            # or [CodeRabbit, Copilot]
+ignore: ["docs/**"]        # excluded from measurement
+flags:
+  degradation_drop_pts: 15 # flag a fall this large vs the previous window
+report:
+  post_scorecard: true     # false = job summary only
+```
+
+**Trend detection** compares each window against the one before it, so a reviewer
+that quietly got worse after a model update shows up as
+`📉 −22 pts (was 51%)` — something no vendor dashboard will tell you.
+
 **How far to trust the number:** the effectiveness rate rests on GitHub's
 `isOutdated` signal. [`EVAL.md`](EVAL.md) is the honest accounting — including the
 part where an attempt to validate it against commit history revealed that the

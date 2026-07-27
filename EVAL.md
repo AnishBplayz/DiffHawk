@@ -77,6 +77,37 @@ commit-overlap gold is **noisier than the signal it was built to check.** Its lo
    is not claimed.** Faking it would betray the one thing this project is about.
    A hand-labelled gold set is the honest next step and is scoped as such.
 
+## Validating the degradation flag: does the signal drift with age?
+
+Phase 2 added a flag that fires when effectiveness drops sharply versus the
+previous window. That flag has an obvious way to be wrong: if older comments are
+systematically *more* likely to be marked outdated — because their code has had
+more time to be touched by anything at all — then every repo would appear to be
+degrading, and the flag would be worthless.
+
+Measured directly on the census corpus (14,588 AI review threads), outdated-rate
+by comment age:
+
+| Comment age | n | marked outdated |
+|---|---:|---:|
+| 0–7 days | 7,440 | 42.4% |
+| 7–30 days | 5,614 | 46.8% |
+| 30–90 days | 2,272 | 47.1% |
+| 90–180 days | 896 | 43.2% |
+| 180+ days | 425 | 37.2% |
+
+**The bias is real but small and non-monotonic.** It rises ~4 pts from the first
+week to the 7–90 day range, then *declines* for older comments. It does not
+accumulate with age, so it cannot manufacture a false degradation.
+
+Two things follow, both now in the code:
+
+1. The default degradation threshold is **15 points**, chosen to sit clear of the
+   ~10-point total spread this artifact can produce. That number is now justified
+   by a measurement instead of taste.
+2. A window of 14 days or less gets an explicit caveat that it understates by
+   roughly 4 points, because its comments haven't had time to age in.
+
 ## What ships anyway: honest caveats on every scorecard
 
 The biases the investigation confirmed are attached to every scorecard at

@@ -87,15 +87,15 @@ test('non-AI (human) threads are not counted', () => {
   expect(reviewersSeen).toEqual([{ reviewer: 'CodeRabbit', comments: 1 }]);
 });
 
-test('open-PR comments are pending, excluded from the rate not counted as failures', () => {
+test('on an open PR, an already-changed thread counts; an untouched one pends', () => {
   const threads = [
-    thread({ path: 'src/a.ts', isOutdated: true }), // would be acted-on if decided
-    thread({ path: 'src/b.ts', isOutdated: false }),
+    thread({ path: 'src/a.ts', isOutdated: true }), // code already changed → decided
+    thread({ path: 'src/b.ts', isOutdated: false }), // still could be addressed → pending
   ];
   const { scorecard } = scoreRepo(repoWith(threads, 'OPEN'), { window: WINDOW });
-  expect(scorecard!.totals.pending).toBe(2);
-  expect(scorecard!.totals.decided).toBe(0);
-  expect(scorecard!.totals.effectiveness).toBe(0); // no decided comments, not "0% good"
+  expect(scorecard!.totals.decided).toBe(1);
+  expect(scorecard!.totals.pending).toBe(1);
+  expect(scorecard!.totals.actedOn).toBe(1);
   expect(scorecard!.caveats.some((c) => c.includes('still-open'))).toBe(true);
 });
 

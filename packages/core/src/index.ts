@@ -11,7 +11,7 @@ import { ReviewComment, type Scorecard } from './schemas.ts';
 import type { RepoPulls, RawThread } from './ports.ts';
 import { classifySeverity } from './severity.ts';
 import { DEFAULT_IGNORE_GLOBS } from './pipeline/attribute.ts';
-import { score } from './pipeline/score.ts';
+import { score, windowEffectiveness } from './pipeline/score.ts';
 import pm from 'picomatch';
 
 export * from './schemas.ts';
@@ -19,8 +19,9 @@ export * from './ports.ts';
 export { classifyOutcome, isActedOn } from './pipeline/outcome.ts';
 export { classifySeverity } from './severity.ts';
 export { areaOf, DEFAULT_IGNORE_GLOBS } from './pipeline/attribute.ts';
-export { score, type ScoreInput } from './pipeline/score.ts';
+export { score, windowEffectiveness, type ScoreInput } from './pipeline/score.ts';
 export { renderScorecard } from './pipeline/render.ts';
+export { renderScorecardMarkdown, SCORECARD_MARKER } from './pipeline/markdown.ts';
 
 /** Deterministic id for a comment, so re-scans dedupe instead of double-count. */
 function commentId(repo: string, pr: number, t: RawThread): string {
@@ -39,6 +40,14 @@ export interface ScoreRepoOptions {
   baseline?: Record<string, number>;
   ignoreGlobs?: string[];
   window: { from: string; to: string };
+  /**
+   * Also compare against the equal-length window immediately before `window`,
+   * to detect degradation. Comments from that earlier span must be present in
+   * `data` (fetch enough PRs to cover both), else the trend is simply null.
+   */
+  detectTrend?: boolean;
+  /** Drop in percentage points that trips a degradation flag (default 15). */
+  degradationDropPts?: number;
 }
 
 export interface ScoreRepoResult {
@@ -101,12 +110,30 @@ export function scoreRepo(data: RepoPulls, opts: ScoreRepoOptions): ScoreRepoRes
   const forReviewer = comments.filter((c) => c.reviewer === target);
   if (forReviewer.length === 0) return { scorecard: null, reviewersSeen };
 
+  // Partition by the window's dates. Until now the window was only a label;
+  // scoring the whole fetch conflated "last 90 days" with "the last 60 PRs".
+  const inWindow = forReviewer.filter(
+    (c) => c.createdAt >= opts.window.from && c.createdAt <= `${opts.window.to}T23:59:59Z`,
+  );
+
+  let previous: { effectiveness: number; decided: number } | undefined;
+  if (opts.detectTrend) {
+    const spanMs = Date.parse(`${opts.window.to}T23:59:59Z`) - Date.parse(opts.window.from);
+    const prevFrom = new Date(Date.parse(opts.window.from) - spanMs).toISOString();
+    const prevComments = forReviewer.filter(
+      (c) => c.createdAt >= prevFrom && c.createdAt < opts.window.from,
+    );
+    if (prevComments.length > 0) previous = windowEffectiveness(prevComments);
+  }
+
   const scorecard = score({
     repo,
     reviewer: target,
     window: opts.window,
-    comments: forReviewer,
+    comments: inWindow,
     baselineEffectiveness: opts.baseline?.[target],
+    previous,
+    degradationDropPts: opts.degradationDropPts,
   });
 
   return { scorecard, reviewersSeen };

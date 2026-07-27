@@ -9,6 +9,10 @@ export interface ScoreInput {
   comments: ReviewComment[];
   /** Global effectiveness for this reviewer, from the census, if known. */
   baselineEffectiveness?: number;
+  /** The previous equal-length window, for degradation detection. */
+  previous?: { effectiveness: number; decided: number };
+  /** Drop, in percentage points, that trips a `degraded` flag (default 15). */
+  degradationDropPts?: number;
 }
 
 const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'unknown'];
@@ -42,12 +46,21 @@ function bucketize(scored: Scored[], keyOf: (c: ReviewComment) => string): Bucke
 }
 
 /**
+ * Below this many decided comments, no verdict is issued at all. A repo whose
+ * PRs are all still open has 0 decided comments — calling that "noise" would be
+ * the tool inventing a judgement from nothing, which is precisely the failure
+ * this project exists to call out in others.
+ */
+const MIN_FOR_VERDICT = 10;
+
+/**
  * Verdict bands come straight from the census per-repo distribution
  * (p10≈14%, median≈43%, p90≈70%): below ~p10 is effectively noise, below median
  * is weak, near p90 is sharp. Absolute bands, not relative — a reviewer at 6% is
  * noise regardless of what its global average happens to be.
  */
-function verdictFor(eff: number): 'sharp' | 'typical' | 'weak' | 'noise' {
+function verdictFor(eff: number, decided: number): 'sharp' | 'typical' | 'weak' | 'noise' | 'insufficient' {
+  if (decided < MIN_FOR_VERDICT) return 'insufficient';
   if (eff < 0.15) return 'noise';
   if (eff < 0.3) return 'weak';
   if (eff >= 0.6) return 'sharp';
@@ -82,7 +95,7 @@ export function score(input: ScoreInput): Scorecard {
           globalEffectiveness: base,
           // Coarse: null keeps us honest that this is not a true per-reviewer rank.
           percentile: null,
-          verdict: verdictFor(effectiveness),
+          verdict: verdictFor(effectiveness, decidedItems.length),
         };
 
   const flags: Scorecard['flags'] = [];
@@ -102,6 +115,31 @@ export function score(input: ScoreInput): Scorecard {
     });
   }
 
+  // Trend / degradation. Only compared when both windows have enough decided
+  // comments — a drop measured off a handful of comments is noise, not a signal.
+  //
+  // The default 15pt threshold is not arbitrary: measured against the census
+  // corpus, outdated-rate varies with comment age by at most ~10 pts across all
+  // ages (42% at 0-7d, 47% at 7-90d, 37% at 180d+) and is non-monotonic, so it
+  // cannot systematically manufacture a "degradation". 15 pts sits clear of it.
+  const MIN_FOR_TREND = 20;
+  const dropPts = input.degradationDropPts ?? 15;
+  let trend: Scorecard['trend'] = null;
+  if (input.previous && input.previous.decided >= MIN_FOR_TREND) {
+    const deltaPts = (effectiveness - input.previous.effectiveness) * 100;
+    trend = {
+      previousEffectiveness: input.previous.effectiveness,
+      previousDecided: input.previous.decided,
+      deltaPts,
+    };
+    if (decidedItems.length >= MIN_FOR_TREND && deltaPts <= -dropPts) {
+      flags.push({
+        kind: 'degraded',
+        detail: `Effectiveness fell ${Math.abs(deltaPts).toFixed(0)} pts vs the previous window (${(input.previous.effectiveness * 100).toFixed(0)}% → ${(effectiveness * 100).toFixed(0)}%).`,
+      });
+    }
+  }
+
   return {
     repo: input.repo,
     reviewer: input.reviewer,
@@ -116,9 +154,24 @@ export function score(input: ScoreInput): Scorecard {
     baseline,
     bySeverity,
     byArea,
+    trend,
     flags,
-    caveats: buildCaveats(scored, pending),
+    caveats: buildCaveats(scored, pending, windowDaysOf(input.window)),
   };
+}
+
+/** Window length in whole days, for the freshness caveat. */
+function windowDaysOf(w: { from: string; to: string }): number | undefined {
+  const ms = Date.parse(`${w.to}T23:59:59Z`) - Date.parse(w.from);
+  return Number.isFinite(ms) ? Math.round(ms / 864e5) : undefined;
+}
+
+/** Effectiveness of a bare comment set — used to compute the previous window. */
+export function windowEffectiveness(comments: ReviewComment[]): { effectiveness: number; decided: number } {
+  const outcomes = comments.map(classifyOutcome);
+  const decided = outcomes.filter(isDecided);
+  const acted = decided.filter(isActedOn).length;
+  return { effectiveness: decided.length === 0 ? 0 : acted / decided.length, decided: decided.length };
 }
 
 /**
@@ -127,10 +180,19 @@ export function score(input: ScoreInput): Scorecard {
  * applies to this scorecard — a static disclaimer nobody reads is worse than a
  * specific one that names the effect and its direction.
  */
-function buildCaveats(scored: Scored[], pending: number): string[] {
+function buildCaveats(scored: Scored[], pending: number, windowDays?: number): string[] {
   const caveats: string[] = [
     "\"Acted-on\" = the anchored code changed after the comment (GitHub's isOutdated). It is a proxy for influence, not proof: a rebase or an unrelated edit to the same lines also marks a thread outdated (inflates), and a fix made elsewhere in the file does not (deflates).",
   ];
+
+  // Measured on the census corpus: threads under a week old are marked outdated
+  // ~4 pts less often than 7-90d ones, simply because the code has had less time
+  // to be touched. Only worth saying when the window is short enough to matter.
+  if (windowDays !== undefined && windowDays <= 14) {
+    caveats.push(
+      `A ${windowDays}-day window understates slightly: very recent comments have had less time for their code to change (~4 pts, measured against the census).`,
+    );
+  }
 
   if (pending > 0) {
     caveats.push(

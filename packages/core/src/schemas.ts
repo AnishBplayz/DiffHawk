@@ -94,14 +94,27 @@ export const Scorecard = z.object({
       globalEffectiveness: z.number(),
       /** Rough percentile of this repo among repos running this reviewer. */
       percentile: z.number().nullable(),
-      verdict: z.enum(['sharp', 'typical', 'weak', 'noise']),
+      /** `insufficient` when too few decided comments to judge — never faked. */
+      verdict: z.enum(['sharp', 'typical', 'weak', 'noise', 'insufficient']),
     })
     .nullable(),
   bySeverity: z.array(Bucket),
   byArea: z.array(Bucket),
+  /**
+   * Movement versus the previous window of equal length. Null when there isn't
+   * enough prior data to compare — a degradation flag off two comments would be
+   * noise, so we say "unknown" rather than invent a trend.
+   */
+  trend: z
+    .object({
+      previousEffectiveness: z.number(),
+      previousDecided: z.number().int(),
+      deltaPts: z.number(), // current − previous, in percentage points
+    })
+    .nullable(),
   flags: z.array(
     z.object({
-      kind: z.enum(['bottom_decile', 'high_volume_low_value']),
+      kind: z.enum(['bottom_decile', 'high_volume_low_value', 'degraded']),
       detail: z.string(),
     }),
   ),

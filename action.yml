@@ -1,0 +1,49 @@
+name: DiffHawk
+description: Measure whether the AI code reviewer running on this repo is actually working, and post a scorecard.
+author: Anish Bhutra
+branding:
+  icon: eye
+  color: purple
+
+inputs:
+  token:
+    description: GitHub token used to read PRs and post the scorecard. Usually ${{ secrets.GITHUB_TOKEN }}.
+    required: false
+    default: ${{ github.token }}
+  reviewer:
+    description: Restrict scoring to one reviewer (e.g. CodeRabbit). Default auto-detects the most active.
+    required: false
+  days:
+    description: Reporting window in days.
+    required: false
+    default: "90"
+  prs:
+    description: Recent pull requests to inspect (must cover two windows for trend detection).
+    required: false
+    default: "120"
+  post:
+    description: Post/update the scorecard comment. Set to "false" to only write the job summary.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: "1.3"
+    - shell: bash
+      # The action ships its own source; install its deps then run the entrypoint.
+      run: |
+        cd "${{ github.action_path }}"
+        bun install --frozen-lockfile
+        bun run apps/action/src/main.ts
+      env:
+        INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_REVIEWER: ${{ inputs.reviewer }}
+        INPUT_DAYS: ${{ inputs.days }}
+        INPUT_PRS: ${{ inputs.prs }}
+        INPUT_POST: ${{ inputs.post }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}

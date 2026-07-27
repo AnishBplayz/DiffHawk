@@ -142,13 +142,60 @@ export class GitHubClient implements VcsProvider {
     return out;
   }
 
-  async #rest<T>(path: string, attempt = 0): Promise<T> {
+  // ── Write surface (Action-only; local CLI uses a read-only token) ──────────
+
+  /** Comments on an issue or PR (same endpoint — a PR is an issue). */
+  async listComments(owner: string, name: string, number: number): Promise<Array<{ id: number; body: string }>> {
+    return this.#rest(`/repos/${owner}/${name}/issues/${number}/comments?per_page=100`);
+  }
+
+  async createComment(owner: string, name: string, number: number, body: string): Promise<{ id: number }> {
+    return this.#rest(`/repos/${owner}/${name}/issues/${number}/comments`, { method: 'POST', body: { body } });
+  }
+
+  async updateComment(owner: string, name: string, commentId: number, body: string): Promise<{ id: number }> {
+    return this.#rest(`/repos/${owner}/${name}/issues/comments/${commentId}`, { method: 'PATCH', body: { body } });
+  }
+
+  /**
+   * Post `body` as a comment on issue/PR `number`, or edit the existing one that
+   * carries `marker`. This is what keeps DiffHawk to a single living scorecard
+   * instead of a new comment every run — the behaviour a noisy bot fails at.
+   */
+  async upsertMarkedComment(owner: string, name: string, number: number, marker: string, body: string): Promise<'created' | 'updated'> {
+    const existing = (await this.listComments(owner, name, number)).find((c) => c.body.includes(marker));
+    if (existing) {
+      await this.updateComment(owner, name, existing.id, body);
+      return 'updated';
+    }
+    await this.createComment(owner, name, number, body);
+    return 'created';
+  }
+
+  /** Find an open issue whose body carries `marker`, or create one. */
+  async findOrCreateTrackingIssue(owner: string, name: string, title: string, marker: string): Promise<number> {
+    const found = await this.#rest<Array<{ number: number; body: string | null }>>(
+      `/repos/${owner}/${name}/issues?state=open&per_page=100`,
+    );
+    const hit = found.find((i) => (i.body ?? '').includes(marker));
+    if (hit) return hit.number;
+    const created = await this.#rest<{ number: number }>(`/repos/${owner}/${name}/issues`, {
+      method: 'POST',
+      body: { title, body: `${marker}\n\nDiffHawk keeps this issue updated with the latest scorecard.` },
+    });
+    return created.number;
+  }
+
+  async #rest<T>(path: string, opts: { method?: string; body?: unknown } = {}, attempt = 0): Promise<T> {
     const res = await fetch(`https://api.github.com${path}`, {
+      method: opts.method ?? 'GET',
       headers: {
         Authorization: `bearer ${this.#token}`,
         'User-Agent': 'diffhawk',
         Accept: 'application/vnd.github+json',
+        ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
       },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     if (res.status === 401) throw new GitHubError('GitHub rejected the token (401).');
     if (res.status === 403 || res.status === 429) {
@@ -156,15 +203,17 @@ export class GitHubClient implements VcsProvider {
       if (attempt >= 4) throw new RateLimitError(`Rate limited after ${attempt} retries.`);
       this.#log(`  rate limited, waiting ${retryAfter}s`);
       await sleep(retryAfter * 1000);
-      return this.#rest<T>(path, attempt + 1);
+      return this.#rest<T>(path, opts, attempt + 1);
     }
     if (res.status >= 500) {
       if (attempt >= 4) throw new GitHubError(`GitHub ${res.status} after ${attempt} retries.`);
       await sleep(Math.min(2 ** attempt * 1000, 16000));
-      return this.#rest<T>(path, attempt + 1);
+      return this.#rest<T>(path, opts, attempt + 1);
     }
     if (!res.ok) throw new GitHubError(`GitHub ${res.status} on ${path}: ${(await res.text()).slice(0, 160)}`);
-    return (await res.json()) as T;
+    // 204 No Content and empty bodies are valid for some writes.
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
   }
 
   async #graphql<T>(query: string, variables: Record<string, unknown>, attempt = 0): Promise<T> {

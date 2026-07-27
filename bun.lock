@@ -10,6 +10,16 @@
         "typescript": "^5.7.0",
       },
     },
+    "apps/action": {
+      "name": "@diffhawk/action",
+      "version": "0.0.0",
+      "dependencies": {
+        "@diffhawk/config": "workspace:*",
+        "@diffhawk/core": "workspace:*",
+        "@diffhawk/github": "workspace:*",
+        "@diffhawk/ingest": "workspace:*",
+      },
+    },
     "apps/cli": {
       "name": "@diffhawk/cli",
       "version": "0.0.0",
@@ -20,6 +30,13 @@
         "@diffhawk/core": "*",
         "@diffhawk/github": "*",
         "@diffhawk/ingest": "*",
+      },
+    },
+    "packages/config": {
+      "name": "@diffhawk/config",
+      "version": "0.0.0",
+      "dependencies": {
+        "zod": "^4.0.0",
       },
     },
     "packages/core": {
@@ -51,7 +68,11 @@
     },
   },
   "packages": {
+    "@diffhawk/action": ["@diffhawk/action@workspace:apps/action"],
+
     "@diffhawk/cli": ["@diffhawk/cli@workspace:apps/cli"],
+
+    "@diffhawk/config": ["@diffhawk/config@workspace:packages/config"],
 
     "@diffhawk/core": ["@diffhawk/core@workspace:packages/core"],
 

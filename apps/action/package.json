@@ -1,0 +1,11 @@
+{
+  "name": "@diffhawk/action",
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "@diffhawk/core": "workspace:*",
+    "@diffhawk/github": "workspace:*",
+    "@diffhawk/ingest": "workspace:*",
+    "@diffhawk/config": "workspace:*"
+  }
+}

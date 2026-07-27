@@ -21,17 +21,20 @@ test('resolved-without-change is acknowledged, not acted-on', () => {
   expect(isActedOn(o)).toBe(false);
 });
 
-test('open PR is pending — decided:false, excluded from the rate', () => {
+test('open PR with untouched code is pending — excluded, not a failure', () => {
   const o = classifyOutcome({ ...base, prState: 'open' });
   expect(o.kind).toBe('pending');
   expect(o.evidence).toBe('pr_open');
   expect(isDecided(o)).toBe(false);
 });
 
-test('open PR is pending even when its thread is already outdated', () => {
-  // The PR could still be reworked; the outcome is not final until it closes.
+test('open PR whose code already changed counts as acted-on', () => {
+  // The change is an observed fact; a later merge cannot undo it. Calling this
+  // "pending" threw away decided successes on active repos.
   const o = classifyOutcome({ ...base, prState: 'open', threadOutdated: true });
-  expect(o.kind).toBe('pending');
+  expect(o.kind).toBe('acted_on');
+  expect(isDecided(o)).toBe(true);
+  expect(isActedOn(o)).toBe(true);
 });
 
 test('merged PR, no change: ignored with merged-unchanged evidence', () => {
