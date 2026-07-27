@@ -1,0 +1,12 @@
+# Never ship host artifacts into the image: node_modules is platform-specific and
+# would also defeat the install layer, and .next/data are large and regenerable.
+node_modules
+**/node_modules
+.next
+**/.next
+data
+.git
+.env
+.env.local
+**/.env.local
+*.log
