@@ -1,0 +1,122 @@
+@import 'tailwindcss';
+
+/*
+ * Tokens. One accent (blue) carries every data mark, because the bars encode a
+ * single measure (effectiveness) and colouring each row differently would make
+ * colour follow rank instead of value. Status hues are reserved for the verdict
+ * badge alone, and it always ships a text label so identity is never colour-only.
+ *
+ * Values are the validated defaults from the dataviz palette: each mode is
+ * stepped for its own surface rather than being an automatic flip of the other.
+ */
+:root {
+  color-scheme: light;
+
+  --surface: #fcfcfb;
+  --surface-raised: #ffffff;
+  --hairline: #e4e3df;
+  --hairline-strong: #cfceca;
+
+  --ink: #0b0b0b;
+  --ink-secondary: #52514e;
+  --ink-muted: #78766f;
+
+  --accent: #2a78d6;
+  --accent-quiet: #dbe7f7;
+
+  --good: #1baf7a;
+  --warn: #eda100;
+  --bad: #e34948;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) {
+    color-scheme: dark;
+
+    --surface: #1a1a19;
+    --surface-raised: #232322;
+    --hairline: #333331;
+    --hairline-strong: #47463f;
+
+    --ink: #ffffff;
+    --ink-secondary: #c3c2b7;
+    --ink-muted: #8d8b82;
+
+    --accent: #3987e5;
+    --accent-quiet: #1c2f47;
+
+    --good: #199e70;
+    --warn: #c98500;
+    --bad: #e66767;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --surface: #1a1a19;
+  --surface-raised: #232322;
+  --hairline: #333331;
+  --hairline-strong: #47463f;
+
+  --ink: #ffffff;
+  --ink-secondary: #c3c2b7;
+  --ink-muted: #8d8b82;
+
+  --accent: #3987e5;
+  --accent-quiet: #1c2f47;
+
+  --good: #199e70;
+  --warn: #c98500;
+  --bad: #e66767;
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+  --color-accent: var(--accent);
+  --color-accent-quiet: var(--accent-quiet);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+html {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Every number on the page is tabular so columns of rates line up. */
+.nums {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Bars grow once on mount. Motion is low by design: a tool whose pitch is
+   restraint should not feel animated. Collapses under reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .bar-grow {
+    animation: bar-grow 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}

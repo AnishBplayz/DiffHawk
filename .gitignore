@@ -8,3 +8,7 @@ node_modules/
 
 # Editor / tooling scratch
 .claude/
+
+# Next.js
+.next/
+next-env.d.ts

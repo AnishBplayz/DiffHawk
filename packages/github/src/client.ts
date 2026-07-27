@@ -19,10 +19,27 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class GitHubError extends Error {}
 export class RateLimitError extends GitHubError {}
 
+/**
+ * GitHub caps every connection's `first:` at 100, so more than one page of pull
+ * requests means real pagination. This is not a theoretical limit: a 120 here
+ * returns `repository: null` with an error, which previously surfaced as a
+ * misleading "repository not found".
+ */
+const MAX_PAGE = 100;
+
 const PULLS_QUERY = /* GraphQL */ `
-  query ($owner: String!, $name: String!, $prCount: Int!) {
+  query ($owner: String!, $name: String!, $prCount: Int!, $after: String) {
     repository(owner: $owner, name: $name) {
-      pullRequests(states: [MERGED, CLOSED, OPEN], first: $prCount, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      pullRequests(
+        states: [MERGED, CLOSED, OPEN]
+        first: $prCount
+        after: $after
+        orderBy: { field: UPDATED_AT, direction: DESC }
+      ) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
         nodes {
           number
           state
@@ -61,6 +78,15 @@ interface GqlPull {
   comments: { nodes: Array<{ author: Author | null }> };
 }
 
+interface PullsResponse {
+  repository: {
+    pullRequests: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: GqlPull[];
+    };
+  } | null;
+}
+
 export interface GitHubClientOptions {
   token: string;
   onLog?: (msg: string) => void;
@@ -76,17 +102,29 @@ export class GitHubClient implements VcsProvider {
   }
 
   async fetchRepoPulls(owner: string, name: string, prLimit: number): Promise<RepoPulls> {
-    const data = await this.#graphql<{ repository: { pullRequests: { nodes: GqlPull[] } } | null }>(
-      PULLS_QUERY,
-      { owner, name, prCount: prLimit },
-    );
+    // Walk pages until we have prLimit pulls or GitHub runs out.
+    const raw: GqlPull[] = [];
+    let cursor: string | null = null;
+    while (raw.length < prLimit) {
+      const want = Math.min(MAX_PAGE, prLimit - raw.length);
+      const data: PullsResponse = await this.#graphql<PullsResponse>(PULLS_QUERY, {
+        owner,
+        name,
+        prCount: want,
+        after: cursor,
+      });
 
-    if (!data.repository) {
-      throw new GitHubError(`Repository ${owner}/${name} not found or not accessible.`);
+      if (!data.repository) {
+        throw new GitHubError(`Repository ${owner}/${name} not found or not accessible.`);
+      }
+      const connection = data.repository.pullRequests;
+      raw.push(...connection.nodes.filter(Boolean));
+      if (!connection.pageInfo.hasNextPage || !connection.pageInfo.endCursor) break;
+      cursor = connection.pageInfo.endCursor;
     }
 
     const reviewerLoginsSeen = new Set<string>();
-    const pulls: RawPull[] = data.repository.pullRequests.nodes.map((pr) => {
+    const pulls: RawPull[] = raw.map((pr) => {
       for (const r of pr.reviews.nodes) if (r.author?.login) reviewerLoginsSeen.add(r.author.login);
       for (const cm of pr.comments.nodes) if (cm.author?.login) reviewerLoginsSeen.add(cm.author.login);
 
@@ -244,8 +282,16 @@ export class GitHubClient implements VcsProvider {
     if (!res.ok) throw new GitHubError(`GitHub ${res.status}: ${(await res.text()).slice(0, 200)}`);
 
     const json = (await res.json()) as { data?: T; errors?: Array<{ message: string; type?: string }> };
-    if (json.errors?.length && !json.data) {
-      throw new GitHubError(`GraphQL: ${json.errors.map((e) => e.message).join('; ')}`);
+
+    // Surface GraphQL errors even when `data` is present. GitHub answers an
+    // invalid argument with HTTP 200, a null field, AND an errors array; only
+    // checking `!data` swallowed the real cause and let the caller report a
+    // misleading "not found" instead of "first cannot exceed 100".
+    if (json.errors?.length) {
+      const fatal = json.errors.filter((e) => e.type !== 'NOT_FOUND' && e.type !== 'FORBIDDEN');
+      if (fatal.length > 0) {
+        throw new GitHubError(`GraphQL: ${fatal.map((e) => e.message).join('; ')}`);
+      }
     }
     if (!json.data) throw new GitHubError('GraphQL returned no data.');
     return json.data;
