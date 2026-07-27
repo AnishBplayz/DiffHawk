@@ -63,11 +63,30 @@ export interface ScoreRepoResult {
  * registry reclassifies existing raw data for free — the same design that let
  * the census fix its numbers without re-scanning.
  */
-export function scoreRepo(data: RepoPulls, opts: ScoreRepoOptions): ScoreRepoResult {
+export interface ExtractResult {
+  comments: ReviewComment[];
+  /** Raw author login per comment id, so a registry fix can reclassify later. */
+  authorLogins: Map<string, string>;
+  reviewersSeen: Array<{ reviewer: string; comments: number }>;
+}
+
+/**
+ * Normalise raw pulls into engine records, without scoring.
+ *
+ * Split out of `scoreRepo` so the persistence layer can ingest comments using
+ * exactly the same id derivation the scorer uses. A second copy of that hash
+ * would be a silent way to break idempotency: ids that differ by a character
+ * turn an upsert into an insert, and the counts inflate with no error anywhere.
+ */
+export function extractComments(
+  data: RepoPulls,
+  opts: { ignoreGlobs?: string[] } = {},
+): ExtractResult {
   const repo = `${data.owner}/${data.name}`;
   const isIgnored = pm(opts.ignoreGlobs ?? DEFAULT_IGNORE_GLOBS);
 
   const comments: ReviewComment[] = [];
+  const authorLogins = new Map<string, string>();
   const seen = new Map<string, number>();
 
   for (const pull of data.pulls) {
@@ -80,9 +99,11 @@ export function scoreRepo(data: RepoPulls, opts: ScoreRepoOptions): ScoreRepoRes
       seen.set(bot.vendor, (seen.get(bot.vendor) ?? 0) + 1);
       if (isIgnored(t.path)) continue;
 
+      const id = commentId(repo, pull.number, t);
+      if (t.reviewerLogin) authorLogins.set(id, t.reviewerLogin);
       comments.push(
         ReviewComment.parse({
-          id: commentId(repo, pull.number, t),
+          id,
           repo,
           pr: pull.number,
           reviewer: bot.vendor,
@@ -102,6 +123,13 @@ export function scoreRepo(data: RepoPulls, opts: ScoreRepoOptions): ScoreRepoRes
   const reviewersSeen = [...seen.entries()]
     .map(([reviewer, c]) => ({ reviewer, comments: c }))
     .sort((a, b) => b.comments - a.comments);
+
+  return { comments, authorLogins, reviewersSeen };
+}
+
+export function scoreRepo(data: RepoPulls, opts: ScoreRepoOptions): ScoreRepoResult {
+  const repo = `${data.owner}/${data.name}`;
+  const { comments, reviewersSeen } = extractComments(data, { ignoreGlobs: opts.ignoreGlobs });
 
   // Default to the reviewer with the most comments if none was named.
   const target = opts.reviewer ?? reviewersSeen[0]?.reviewer;

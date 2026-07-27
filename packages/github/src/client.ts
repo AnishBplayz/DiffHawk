@@ -123,15 +123,21 @@ export class GitHubClient implements VcsProvider {
       cursor = connection.pageInfo.endCursor;
     }
 
-    const reviewerLoginsSeen = new Set<string>();
+    const { pulls, reviewerLoginsSeen } = this.#mapPulls(raw);
+    return { owner, name, pulls, reviewerLoginsSeen };
+  }
+
+  /** Shared GraphQL-to-engine mapping, used by both the walk and the page fetch. */
+  #mapPulls(raw: GqlPull[]): { pulls: RawPull[]; reviewerLoginsSeen: string[] } {
+    const seen = new Set<string>();
     const pulls: RawPull[] = raw.map((pr) => {
-      for (const r of pr.reviews.nodes) if (r.author?.login) reviewerLoginsSeen.add(r.author.login);
-      for (const cm of pr.comments.nodes) if (cm.author?.login) reviewerLoginsSeen.add(cm.author.login);
+      for (const r of pr.reviews.nodes) if (r.author?.login) seen.add(r.author.login);
+      for (const cm of pr.comments.nodes) if (cm.author?.login) seen.add(cm.author.login);
 
       const threads: RawThread[] = pr.reviewThreads.nodes.map((t) => {
         const opener = t.comments.nodes[0];
         const login = opener?.author?.login ?? null;
-        if (login) reviewerLoginsSeen.add(login);
+        if (login) seen.add(login);
         return {
           reviewerLogin: login,
           reviewerIsBot: opener?.author?.__typename === 'Bot',
@@ -146,8 +152,41 @@ export class GitHubClient implements VcsProvider {
 
       return { number: pr.number, state: pr.state, createdAt: pr.createdAt, threads };
     });
+    return { pulls, reviewerLoginsSeen: [...seen] };
+  }
 
-    return { owner, name, pulls, reviewerLoginsSeen: [...reviewerLoginsSeen] };
+  /**
+   * Fetch exactly ONE page of pull requests and return its cursor.
+   *
+   * The backfill worker needs page-level granularity so it can checkpoint after
+   * each page; `fetchRepoPulls` walks all pages internally, which would make a
+   * killed worker restart from the beginning.
+   */
+  async fetchPullsPage(
+    owner: string,
+    name: string,
+    pageSize: number,
+    after: string | null,
+  ): Promise<RepoPulls & { hasNextPage: boolean; endCursor: string | null }> {
+    const data: PullsResponse = await this.#graphql<PullsResponse>(PULLS_QUERY, {
+      owner,
+      name,
+      prCount: Math.min(pageSize, MAX_PAGE),
+      after,
+    });
+    if (!data.repository) {
+      throw new GitHubError(`Repository ${owner}/${name} not found or not accessible.`);
+    }
+    const conn = data.repository.pullRequests;
+    const { pulls, reviewerLoginsSeen } = this.#mapPulls(conn.nodes.filter(Boolean));
+    return {
+      owner,
+      name,
+      pulls,
+      reviewerLoginsSeen,
+      hasNextPage: conn.pageInfo.hasNextPage,
+      endCursor: conn.pageInfo.endCursor,
+    };
   }
 
   /**

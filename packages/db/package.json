@@ -1,0 +1,11 @@
+{
+  "name": "@diffhawk/db",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@diffhawk/core": "workspace:*",
+    "drizzle-orm": "^0.38.0",
+    "postgres": "^3.4.0"
+  }
+}
