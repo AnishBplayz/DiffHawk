@@ -7,7 +7,10 @@ branding:
 
 inputs:
   token:
-    description: GitHub token used to read PRs and post the scorecard. Usually ${{ secrets.GITHUB_TOKEN }}.
+    # No ${{ }} in this text. GitHub evaluates expressions inside input
+    # descriptions too, and `secrets` is not a valid context in action.yml, so
+    # mentioning it that way makes the whole action fail to load.
+    description: "GitHub token used to read PRs and post the scorecard. Usually secrets.GITHUB_TOKEN."
     required: false
     default: ${{ github.token }}
   reviewer:
