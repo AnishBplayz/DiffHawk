@@ -3,7 +3,8 @@
 **Is the AI code reviewer on your repo actually working? DiffHawk measures it,
 compares it against a real baseline, and tells you when it degrades.**
 
-[![tests](https://img.shields.io/badge/tests-47%20passing-brightgreen)](#verification)
+[![CI](https://github.com/AnishBplayz/DiffHawk/actions/workflows/ci.yml/badge.svg)](https://github.com/AnishBplayz/DiffHawk/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/diffhawk)](https://www.npmjs.com/package/diffhawk)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![study](https://img.shields.io/badge/built%20on-1%2C112%20repos-informational)](https://github.com/AnishBplayz/ai-reviewer-census)
 
@@ -59,16 +60,16 @@ worse after a model update is invisible from the outside and obvious in a trend.
 
 ## Try it
 
-Requires [Bun](https://bun.sh). Read-only: it reads public pull requests and
-writes nothing.
+No install, no signup. Read-only: it reads public pull requests and writes
+nothing.
 
 ```bash
-bun install
-bun run score kubeedge/kubeedge     # a reviewer earning its place
-bun run score <owner>/<repo>        # yours
+npx diffhawk score kubeedge/kubeedge     # a reviewer earning its place
+npx diffhawk score <owner>/<repo>        # yours
 ```
 
-Auth uses `GITHUB_TOKEN`, falling back to `gh auth token`.
+Auth uses `GITHUB_TOKEN`, falling back to `gh auth token`. Working on the repo
+itself instead? `bun install && bun run score <owner>/<repo>`.
 
 ### As a GitHub Action
 
@@ -164,7 +165,7 @@ Not "it should work" — what was actually run:
 
 | Claim | How it was checked |
 |---|---|
-| Engine correctness | 47 tests, no network, fixtures |
+| Engine correctness | 47 tests, no network, fixtures, run in CI against a real Postgres |
 | Exactly-once ingest | worker killed mid-backfill, resumed: **exactly 20 comments, not 25 or 30** |
 | Under concurrency | 3 replicas, 3 simultaneous backfills of one repo: **221 → 221** |
 | Webhook security | valid, replayed, bad signature, tampered body → 202, dedupe, 400, 400 |

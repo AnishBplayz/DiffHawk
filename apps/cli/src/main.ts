@@ -56,9 +56,12 @@ async function main(): Promise<number> {
   const rest = argv[0] === 'score' ? argv.slice(1) : argv;
   const args = parseArgs(rest);
 
-  if (!args.repo || rest.includes('-h') || rest.includes('--help')) {
+  // Asking for help and getting it is a success, so `--help` exits 0 even with
+  // no repo. Only being invoked with nothing at all is a usage error.
+  const wantsHelp = rest.includes('-h') || rest.includes('--help');
+  if (wantsHelp || !args.repo) {
     process.stdout.write(USAGE);
-    return args.repo ? 0 : 1;
+    return wantsHelp ? 0 : 1;
   }
 
   const slug = args.repo.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
